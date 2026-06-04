@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status - Digital Frame</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .card { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #3498db; }
+        .config-card { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-top: 20px; }
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #3498db; }
+        input:checked + .slider:before { transform: translateX(26px); }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        
+        <h1>System Status</h1>
+        <div class="grid">
+            <div class="card">
+                <h3>CPU Temperature</h3>
+                <div id="cpu-temp" class="stat-value">-- °C</div>
+            </div>
+            <div class="card">
+                <h3>Memory Usage</h3>
+                <div id="mem-usage" class="stat-value">-- %</div>
+                <div id="mem-info">-- MB used / -- MB total</div>
+            </div>
+        </div>
+
+        <div class="config-card">
+            <h3>Machine Optimization</h3>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <strong>Weak Machine Mode</strong><br>
+                    <small>Limits updates to every 30 seconds to save CPU/Memory</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="weak-machine-toggle" onchange="toggleWeakMachine()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <h3>Disk Usage</h3>
+        <div id="disk-list" class="grid">
+            <!-- Partitions will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        let updateInterval = 5000;
+        let pollTimer = null;
+
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const weakMode = config.DEFAULT.weak_machine === 'True' || config.DEFAULT.weak_machine === true;
+                document.getElementById('weak-machine-toggle').checked = weakMode;
+                updateInterval = weakMode ? 30000 : 5000;
+                resetPolling();
+            } catch (e) {
+                console.error("Failed to fetch config", e);
+            }
+        }
+
+        async function toggleWeakMachine() {
+            const enabled = document.getElementById('weak-machine-toggle').checked;
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        DEFAULT: { weak_machine: enabled }
+                    })
+                });
+                updateInterval = enabled ? 30000 : 5000;
+                resetPolling();
+            } catch (e) {
+                alert("Failed to update setting");
+            }
+        }
+
+        function resetPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(fetchStatus, updateInterval);
+        }
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/system/status');
+                const data = await response.json();
+                
+                document.getElementById('cpu-temp').textContent = data.cpu_temp ? data.cpu_temp.toFixed(1) + ' °C' : 'N/A';
+                document.getElementById('mem-usage').textContent = data.memory.percent.toFixed(1) + ' %';
+                document.getElementById('mem-info').textContent = `${data.memory.used} MB used / ${data.memory.total} MB total`;
+                
+                const diskList = document.getElementById('disk-list');
+                diskList.innerHTML = '';
+                data.disk.forEach(d => {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `
+                        <h4>${d.mountpoint} (${d.device})</h4>
+                        <div class="stat-value">${d.percent.toFixed(1)} %</div>
+                        <div>${d.used} GB / ${d.total} GB</div>
+                    `;
+                    diskList.appendChild(card);
+                });
+            } catch (e) {
+                console.error("Failed to fetch system status", e);
+            }
+        }
+        
+        fetchConfig();
+        fetchStatus();
+    </script>
+</body>
+</html>

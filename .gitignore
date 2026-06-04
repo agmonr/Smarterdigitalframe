@@ -1,0 +1,9 @@
+*.log
+*.json
+*.tmp
+logs/*
+config.ini
+__pycache__/
+venv/*
+.wifi_configured
+images/google_photos/*

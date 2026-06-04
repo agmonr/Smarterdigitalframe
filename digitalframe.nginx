@@ -1,0 +1,53 @@
+server {
+    listen 80;
+    server_name _;
+
+    error_page 502 503 504 /502.html;
+
+    location = /502.html {
+        root /home/ram/digitalFrame/static;
+        internal;
+    }
+
+    location /static/ {
+        alias /home/ram/digitalFrame/static/;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:5001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /current {
+        proxy_pass http://127.0.0.1:5001/current;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /network {
+        proxy_pass http://127.0.0.1:5003/network;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /api/network/ {
+        proxy_pass http://127.0.0.1:5003/api/network/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:5004/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:5002/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

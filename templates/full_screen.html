@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Frame - Full Screen</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: black; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        #content { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .clock { 
+            position: absolute;
+            color: white; 
+            font-family: sans-serif; 
+            font-size: 10vw; 
+            font-weight: bold; 
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8), -2px -2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <img id="current-img" src="" alt="Current Image" style="display: none;">
+        <div id="clock-display" class="clock" style="display: none;"></div>
+    </div>
+
+    <script>
+        let lastImage = "";
+        let lastType = "";
+        let showTimeAlways = false;
+
+        function updateClock() {
+            const now = new Date();
+            const clock = document.getElementById('clock-display');
+            clock.innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Anti-burn-in animation parameters
+        const Rx = 20; // Radius X in pixels
+        const Ry = 20; // Radius Y in pixels
+        const omega = 0.2; // Angular frequency (rad/s)
+
+        function animateBurnIn(timestamp) {
+            const clock = document.getElementById('clock-display');
+            if (clock.style.display !== "none") {
+                const t = timestamp / 1000; // Convert to seconds
+                const dx = Rx * Math.cos(omega * t);
+                const dy = Ry * Math.sin(omega * t);
+                clock.style.transform = `translate(${dx}px, ${dy}px)`;
+            }
+            requestAnimationFrame(animateBurnIn);
+        }
+
+        async function updateImage() {
+            try {
+                const response = await fetch('/api/state');
+                const state = await response.json();
+                
+                const img = document.getElementById('current-img');
+                const clock = document.getElementById('clock-display');
+
+                if (state.type === "clock" || showTimeAlways) {
+                    updateClock();
+                    clock.style.display = "block";
+                } else {
+                    clock.style.display = "none";
+                }
+
+                if (state.current_image && state.current_image !== "Clock" && state.current_image !== "Idle") {
+                    if (state.current_image !== lastImage) {
+                        img.src = '/api/image/' + state.current_image + '?t=' + Date.now();
+                        img.style.display = "block";
+                        lastImage = state.current_image;
+                    }
+                } else if (state.type !== "clock") {
+                    img.style.display = "none";
+                    lastImage = "";
+                } else if (state.current_image === "Clock" || state.current_image === "Idle") {
+                    img.style.display = "none";
+                    lastImage = "";
+                }
+
+                lastType = state.type;
+            } catch (err) {
+                console.error("Error fetching state", err);
+            }
+        }
+
+        async function initPolling() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const weakMode = config.DEFAULT.weak_machine === 'True' || config.DEFAULT.weak_machine === true;
+                showTimeAlways = config.DEFAULT.showtime === 'True' || config.DEFAULT.showtime === true;
+                
+                const interval = weakMode ? 30000 : 2000;
+                setInterval(updateImage, interval);
+            } catch (e) {
+                setInterval(updateImage, 2000);
+            }
+        }
+
+        setInterval(updateClock, 60000);
+        updateImage();
+        initPolling();
+        requestAnimationFrame(animateBurnIn);
+    </script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Frame Dashboard</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            background: #f4f7f6; 
+            margin: 0; 
+            padding: 0; 
+            color: #333; 
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .container { 
+            width: 95%; 
+            max-width: 600px; 
+            margin: auto; 
+            background: white; 
+            padding: 30px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            box-sizing: border-box;
+        }
+        h1 { margin-top: 0; color: #2c3e50; text-align: center; font-size: 24px; }
+        .status-card { background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 25px; border-left: 5px solid #3498db; text-align: center; }
+        .current-image { width: 100%; max-height: 400px; object-fit: contain; background: #000; border-radius: 8px; margin-top: 15px; }
+        .action-section { margin-top: 30px; }
+        .action-group { margin-bottom: 20px; }
+        .action-group label { display: block; margin-bottom: 10px; font-weight: bold; font-size: 14px; }
+        .btn-row { display: flex; gap: 10px; }
+        button { 
+            flex: 1;
+            background: #3498db; 
+            color: white; 
+            border: none; 
+            padding: 10px 8px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2980b9; }
+        button.btn-on { background: #2ecc71; }
+        button.btn-on:hover { background: #27ae60; }
+        button.btn-off { background: #95a5a6; }
+        button.btn-off:hover { background: #7f8c8d; }
+        button.restart { background: #e74c3c; margin-top: 20px; width: 100%; }
+        button.restart:hover { background: #c0392b; }
+        .refresh-info { font-size: 11px; color: #7f8c8d; margin-top: 10px; }
+
+        @media (max-width: 480px) {
+            .container { padding: 15px; width: 98%; }
+            h1 { font-size: 20px; }
+            #display-info { font-size: 14px !important; }
+            button { font-size: 13px; padding: 8px 5px; }
+            .status-card h3 { font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+    {% include "nav.html" %}
+    <div class="container">
+        <h1>Dashboard</h1>
+        
+        <div class="status-card">
+            <h3>Current State</h3>
+            <div id="display-info" style="font-size: 16px; margin-bottom: 10px; word-break: break-all;">Loading...</div>
+            <img id="display-preview" class="current-image" src="" alt="Current Display" style="display: none;">
+            <div style="margin-top: 15px;">
+                <a id="full-image-link" href="/current" target="_blank" style="color: #3498db; text-decoration: none; font-weight: bold; display: none;">Open Full Screen Viewer &rarr;</a>
+            </div>
+            <div class="refresh-info">Auto-refreshing every 2 seconds</div>
+        </div>
+
+        <div class="action-section">
+            <div class="action-group">
+                <label>Slideshow Navigation</label>
+                <div class="btn-row">
+                    <button onclick="navigate('prev')">&larr; Previous</button>
+                    <button onclick="navigate('next')">Next &rarr;</button>
+                </div>
+            </div>
+
+            <div class="action-group">
+                <label>Display Power: <span id="screen-status" style="color: #3498db;">Loading...</span></label>
+                <div class="btn-row">
+                    <button class="btn-on" onclick="setScreen('on')">Turn ON</button>
+                    <button class="btn-off" onclick="setScreen('off')">Turn OFF</button>
+                </div>
+            </div>
+
+            <button class="restart" onclick="restartFrame()">Restart System Service</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "/api";
+
+        async function updateScreenStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/screen`);
+                const data = await response.json();
+                document.getElementById('screen-status').textContent = data.state.toUpperCase();
+            } catch (e) {
+                document.getElementById('screen-status').textContent = "ERROR";
+            }
+        }
+
+        async function navigate(direction) {
+            try {
+                const response = await fetch(`${API_BASE}/${direction}`, { method: 'POST' });
+                if (!response.ok) throw new Error('API Error');
+                // Wait longer for backend to update state file
+                setTimeout(updateStatus, 1500); 
+            } catch (e) {
+                alert("Error navigating: " + e.message);
+            }
+        }
+
+        async function setScreen(state) {
+            try {
+                const response = await fetch(`${API_BASE}/screen`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state: state })
+                });
+                if (!response.ok) throw new Error('API Error');
+                // Refresh status immediately
+                updateScreenStatus();
+                setTimeout(updateStatus, 1000);
+            } catch (e) {
+                alert("Error controlling screen: " + e.message);
+            }
+        }
+
+        async function updateStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/state`);
+                const state = await response.json();
+                
+                const info = document.getElementById('display-info');
+                const preview = document.getElementById('display-preview');
+                const link = document.getElementById('full-image-link');
+
+                if (state.error) {
+                    info.textContent = "System Status: " + state.error;
+                    preview.style.display = "none";
+                    link.style.display = "none";
+                    return;
+                }
+
+                if (state.current_image && state.current_image !== "Clock" && state.current_image !== "Idle") {
+                    info.textContent = (state.type === "clock" ? "Clock Overlay on: " : "Viewing: ") + state.current_image;
+                    preview.style.display = "block";
+                    preview.src = `/api/image/${state.current_image}?t=${Date.now()}`;
+                    link.style.display = "inline-block";
+                } else if (state.type === "clock") {
+                    info.textContent = "Displaying Clock";
+                    preview.style.display = "none";
+                    link.style.display = "none";
+                } else {
+                    info.textContent = "System Idle";
+                    preview.style.display = "none";
+                    link.style.display = "none";
+                }
+            } catch (e) {
+                document.getElementById('display-info').textContent = "Error connecting to API";
+            }
+        }
+
+        async function restartFrame() {
+            if (!confirm("Restart the digital frame service?")) return;
+            try {
+                await fetch(`${API_BASE}/restart`, { method: 'POST' });
+                alert("Restart command sent.");
+            } catch (e) {
+                alert("Error sending restart command.");
+            }
+        }
+
+        updateStatus();
+        updateScreenStatus();
+
+        async function initPolling() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const weakMode = config.DEFAULT.weak_machine === 'True' || config.DEFAULT.weak_machine === true;
+                const statusInterval = weakMode ? 30000 : 2000;
+                const screenInterval = weakMode ? 60000 : 5000;
+                
+                setInterval(updateStatus, statusInterval);
+                setInterval(updateScreenStatus, screenInterval);
+                
+                if (weakMode) {
+                    document.querySelector('.refresh-info').textContent = "Auto-refreshing every 30 seconds (Weak Machine Mode)";
+                }
+            } catch (e) {
+                setInterval(updateStatus, 2000);
+                setInterval(updateScreenStatus, 5000);
+            }
+        }
+        initPolling();
+    </script>
+</body>
+</html>
