@@ -18,19 +18,24 @@ apt-get install -y python3-venv python3-pip nginx \
 	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite\
        	dnsmasq network-manager apt-listchanges cloud-init python3-apt
 
-# 1. Setup Virtual Environment
-echo "Setting up Python virtual environment and installing requirements..."
-if [ ! -f "$PROJECT_DIR/venv/bin/activate" ]; then
-    echo "Virtual environment not found or incomplete. Creating new one..."
-    # Remove potentially broken/empty venv directory
-    rm -rf "$PROJECT_DIR/venv"
-    python3 -m venv "$PROJECT_DIR/venv"
+# 1. Setup Virtual Environment with uv
+echo "Setting up Python virtual environment and installing requirements using uv..."
+# Install uv if not found
+if ! command -v uv &> /dev/null; then
+    echo "uv not found, installing..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # Add uv to PATH for the current session
+    source $HOME/.cargo/env
+fi
+
+if [ ! -d "$PROJECT_DIR/venv" ]; then
+    echo "Virtual environment not found. Creating new one with uv..."
+    uv venv "$PROJECT_DIR/venv"
 fi
 
 # Always update requirements to ensure 'coments' (commands) work after a pull
-echo "Installing/Updating dependencies from requirements.txt..."
-"$PROJECT_DIR/venv/bin/pip" install --upgrade pip
-"$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+echo "Installing/Updating dependencies from requirements.txt using uv..."
+uv pip install --python "$PROJECT_DIR/venv/bin/python" -r "$PROJECT_DIR/requirements.txt"
 
 # 2. Configure Nginx
 echo "Configuring Nginx..."
