@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Live Video - Digital Frame</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; }
+        .nav { margin-bottom: 20px; }
+        .nav a { margin: 0 10px; color: #3498db; text-decoration: none; font-weight: bold; }
+        img { width: 100%; max-width: 800px; border-radius: 8px; background: #000; }
+        .settings { margin-top: 20px; }
+        select { padding: 8px; font-size: 16px; }
+        button { padding: 8px 16px; background: #3498db; color: white; border: none; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <h1>Live Video</h1>
+    <img id="video-stream" src="/api/video_feed" alt="Live Video Feed">
+    <div class="settings">
+        <label for="video-resolution">Resolution:</label>
+        <select id="video-resolution">
+            <option value="320x240">320x240</option>
+            <option value="640x480">640x480</option>
+            <option value="1024x768">1024x768</option>
+            <option value="1280x720">1280x720 (HD)</option>
+            <option value="1920x1080">1920x1080 (Full HD)</option>
+        </select>
+        <button onclick="saveResolution()">Update Resolution</button>
+    </div>
+    <script>
+        async function saveResolution() {
+            const res = document.getElementById('video-resolution').value;
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ CAMERA: { video_resolution: res } })
+                });
+                
+                // Show a brief message or just wait for the restart
+                const btn = document.querySelector('button');
+                btn.disabled = true;
+                btn.innerText = 'Restarting stream...';
+                
+                // Wait 3 seconds for the backend service to restart fully
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            } catch (err) {
+                alert('Failed to update resolution');
+            }
+        }
+        async function loadConfig() {
+            try {
+                const res = await fetch('/api/config');
+                const config = await res.json();
+                const currentRes = (config.CAMERA && config.CAMERA.video_resolution) || '640x480';
+                document.getElementById('video-resolution').value = currentRes;
+            } catch (err) {}
+        }
+        loadConfig();
+    </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+[DEFAULT]
+imagedir = images/
+interval = 60
+group_size = 20
+framebufferdevice = /dev/fb0
+colororder = RGB
+loglevel = ERROR
+logfile = logs/digitalframe.log
+showtime = False
+showperiodicclock = True
+showscheduledclock = False
+clockschedule1 = 0 * * * *
+clockschedule2 = 30 * * * *
+timeformat = %H:%M
+timefontsize = 100
+timelocation = top-left
+timecolor = #ffc800
+timebordercolor = #000000
+timebordersize = 2
+negativetime = False
+timealpha = 215
+showhourlytime = True
+screenoffhour = 1
+screenonhour = 6
+groupsize = 20
+selected_folders = 
+weak_machine = False
+
+[MOTION]
+enabled = False
+sensitivity = 56
+timeout = 500
+shutter = 0
+gain = 0
+auto_sensitivity = True
+
+[SCHEDULE]
+enabled = False
+
+[CAMERA]
+enabled = False
+video_resolution = 1024x768
+schedule = 0 0-6 * * *
+imagedir_captures = captures/
+
+[NETWORK]
+ap_name = dframe
+ap_password = DigitalFrame
+

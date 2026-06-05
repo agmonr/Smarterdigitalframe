@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Feed - Digital Frame Manager</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #2c3e50; }
+        .camera-card { background: #e8f4f8; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 5px solid #3498db; text-align: center; }
+        .camera-feed { width: 100%; max-height: 500px; object-fit: contain; background: #000; border-radius: 8px; margin-top: 10px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: bold; }
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background: #2980b9; }
+        .error-message { color: #e74c3c; font-weight: bold; margin-top: 10px; display: none; }
+        .settings-card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; border-top: 5px solid #2ecc71; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="number"], input[type="range"], input[type="text"] { width: 100%; padding: 8px; box-sizing: border-box; }
+        .checkbox-group { display: flex; align-items: center; }
+        .checkbox-group input { width: auto; margin-right: 10px; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 14px; font-weight: bold; margin-left: 10px; }
+        .status-on { background: #2ecc71; color: white; }
+        .status-off { background: #95a5a6; color: white; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        
+        
+        <h1>Camera Feed</h1>
+        <div class="camera-card">
+            <img id="camera-image" class="camera-feed" src="" alt="Camera Feed" onerror="handleError()">
+            <div id="error-msg" class="error-message">Could not load camera feed. Make sure the camera is connected.</div>
+            <div>
+                <button onclick="refreshImage()">Refresh Capture</button>
+            </div>
+        </div>
+        <div class="settings-card">
+            <h3>Motion Detection Settings</h3>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="motion-enabled">
+                <label for="motion-enabled">Enable Motion Detection (Automatic Screen Control)</label>
+            </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="auto-sensitivity">
+                <label for="auto-sensitivity">Auto-sensitivity (adjust based on light)</label>
+            </div>
+            <div class="form-group">
+                <label for="sensitivity">Sensitivity (1-100): <span id="sensitivity-val">50</span></label>
+                <input type="range" id="sensitivity" min="1" max="100" value="50" oninput="document.getElementById('sensitivity-val').innerText = this.value">
+                <small>Current Effective Sensitivity: <span id="current-sensitivity">50</span></small>
+            </div>
+            <div class="form-group">
+                <label for="timeout">Screen Timeout (seconds):</label>
+                <input type="number" id="timeout" min="10" value="300">
+            </div>
+            <hr>
+            <h4>Advanced (Low Light)</h4>
+            <div class="form-group">
+                <label for="shutter">Shutter Speed (us, 0 for auto):</label>
+                <input type="number" id="shutter" min="0" value="0">
+                <small>Higher values (e.g., 100000) help in the dark but make movement blurry.</small>
+            </div>
+            <div class="form-group">
+                <label for="gain">Analog Gain (0 for auto):</label>
+                <input type="number" id="gain" min="0" value="0">
+            </div>
+            <hr>
+            <h4>Scheduled Capture</h4>
+            <div class="form-group">
+                <label for="capture-schedule">Cron Schedule (e.g., 0 * * * *):</label>
+                <input type="text" id="capture-schedule" placeholder="0 * * * *">
+            </div>
+            <div class="form-group">
+                <label for="capture-folder">Capture Folder:</label>
+                <input type="text" id="capture-folder" placeholder="captures/">
+            </div>
+            <div class="form-group">
+            </div>
+            <button onclick="saveSettings()" style="background: #2ecc71;">Save Settings</button>
+            <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                <strong>Current Status:</strong>
+                <span id="screen-status" class="status-badge status-off">Screen OFF</span>
+                <span id="last-motion" style="margin-left: 15px; font-size: 14px; color: #7f8c8d;"></span>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function checkCameraEnabled() {
+            try {
+                const configRes = await fetch('/api/config');
+                const config = await configRes.json();
+                if (!(config.CAMERA && config.CAMERA.enabled === 'True')) {
+                    alert("Camera is disabled.");
+                    window.location.href = '/';
+                }
+            } catch (err) {
+                console.error("Failed to check camera settings", err);
+            }
+        }
+        async function loadSettings(isInitialLoad = false) {
+            try {
+                const response = await fetch('/api/motion');
+                const data = await response.json();
+                if (isInitialLoad) {
+                    document.getElementById('motion-enabled').checked = data.enabled;
+                    document.getElementById('auto-sensitivity').checked = data.auto_sensitivity;
+                    document.getElementById('sensitivity').value = data.sensitivity;
+                    document.getElementById('sensitivity-val').innerText = data.sensitivity;
+                    document.getElementById('current-sensitivity').innerText = data.effective_sensitivity;
+                    document.getElementById('timeout').value = data.timeout;
+                    document.getElementById('shutter').value = data.shutter || 0;
+                    document.getElementById('gain').value = data.gain || 0;
+                    const configRes = await fetch('/api/config');
+                    const config = await configRes.json();
+                    document.getElementById('capture-schedule').value = (config.CAMERA && config.CAMERA.schedule) || '';
+                    document.getElementById('capture-folder').value = (config.CAMERA && config.CAMERA.imagedir_captures) || 'captures/';
+                }
+                document.getElementById('current-sensitivity').innerText = data.effective_sensitivity;
+                const statusBadge = document.getElementById('screen-status');
+                statusBadge.innerText = 'Screen ' + data.screen_state.toUpperCase();
+                statusBadge.className = 'status-badge ' + (data.screen_state === 'on' ? 'status-on' : 'status-off');
+                document.getElementById('last-motion').innerText = 'Last motion: ' + data.last_movement_seconds_ago + 's ago';
+            } catch (err) {
+                console.error("Failed to load settings", err);
+            }
+        }
+        async function saveSettings() {
+            const data = {
+                enabled: document.getElementById('motion-enabled').checked,
+                auto_sensitivity: document.getElementById('auto-sensitivity').checked,
+                sensitivity: parseInt(document.getElementById('sensitivity').value),
+                timeout: parseInt(document.getElementById('timeout').value),
+                shutter: parseInt(document.getElementById('shutter').value),
+                gain: parseInt(document.getElementById('gain').value)
+            };
+            const scheduleData = { 
+                CAMERA: { 
+                    schedule: document.getElementById('capture-schedule').value,
+                    imagedir_captures: document.getElementById('capture-folder').value,
+                } 
+            };
+            try {
+                await fetch('/api/motion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scheduleData) });
+            } catch (err) {
+                alert('Failed to save settings');
+            }
+        }
+        function refreshImage() {
+            const img = document.getElementById('camera-image');
+            const errorMsg = document.getElementById('error-msg');
+            errorMsg.style.display = 'none';
+            img.style.display = 'block';
+            img.src = '/api/camera_feed?t=' + new Date().getTime();
+        }
+        function handleError() {
+            const img = document.getElementById('camera-image');
+            const errorMsg = document.getElementById('error-msg');
+            img.style.display = 'none';
+            errorMsg.style.display = 'block';
+            setTimeout(refreshImage, 5000);
+        }
+        checkCameraEnabled();
+        document.getElementById('camera-image').src = '/api/camera_feed';
+        loadSettings(true);
+        setInterval(() => loadSettings(false), 5000);
+    </script>
+</body>
+</html>

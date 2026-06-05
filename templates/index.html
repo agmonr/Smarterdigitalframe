@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Frame Gallery</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            color: #1c1e21;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+        .image-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .image-card:hover {
+            transform: translateY(-5px);
+        }
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        .image-name {
+            padding: 10px;
+            font-size: 14px;
+            text-align: center;
+            word-break: break-all;
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <h1>Digital Frame Gallery</h1>
+    <div id="datetime" style="text-align: center; font-size: 1.5em; margin-bottom: 20px; font-weight: bold;"></div>
+    <script>
+        function updateDateTime() {
+            const now = new Date();
+            document.getElementById('datetime').innerText = now.toLocaleString();
+        }
+        updateDateTime();
+
+        async function initIntervals() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const weakMode = config.DEFAULT.weak_machine === 'True' || config.DEFAULT.weak_machine === true;
+                
+                setInterval(updateDateTime, weakMode ? 30000 : 1000);
+                
+                // Refresh the page every 60 seconds (or 5 mins if weak) to update gallery
+                setInterval(function() {
+                    window.location.reload();
+                }, weakMode ? 300000 : 60000);
+            } catch (e) {
+                setInterval(updateDateTime, 1000);
+                setInterval(function() { window.location.reload(); }, 60000);
+            }
+        }
+        initIntervals();
+    </script>
+    <div class="gallery">
+        {% for image in images %}
+        <div class="image-card">
+            <img src="{{ url_for('serve_image', filename=image) }}" alt="{{ image }}">
+            <div class="image-name">{{ image }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if history %}
+    <div style="margin-top: 40px; padding: 20px; border-top: 1px solid #ccc;">
+        <h2>Recently Viewed</h2>
+        <ul style="list-style: none; padding: 0;">
+            {% for item in history %}
+            <li style="margin-bottom: 10px;">
+                <strong>{{ item.name }}</strong> - <small>{{ item.timestamp }}</small>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</body>
+</html>

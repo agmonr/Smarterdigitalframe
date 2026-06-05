@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image History</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        
+        .main-wrapper { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 24px; text-align: left; margin: 0 0 20px 0; color: #2c3e50; }
+
+        .container { 
+            display: flex; 
+            flex-direction: row; 
+            gap: 25px; 
+            align-items: flex-start;
+        }
+
+        /* Master List */
+        .history-list { 
+            width: fit-content;
+            min-width: 260px;
+            max-width: 420px;
+            background: var(--card-bg, #fff); 
+            padding: 10px; 
+            border-radius: 12px; 
+            height: calc(100vh - 120px); 
+            overflow-y: auto; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            border: 1px solid #e1e8ed;
+        }
+
+        /* Detail Preview */
+        .preview-pane { 
+            flex: 1;
+            background: var(--card-bg, #fff); 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+            text-align: center;
+            position: sticky;
+            top: 20px;
+            border: 1px solid #e1e8ed;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 120px);
+        }
+
+        .history-item { 
+            padding: 12px 15px; 
+            border-bottom: 1px solid #f0f4f8; 
+            cursor: pointer; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            scroll-margin: 15px 0;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            margin-bottom: 4px;
+        }
+        .history-item:hover { background: #f8fbff; }
+        .history-item.active { 
+            background: #eef7ff; 
+            border-left: 5px solid #3498db; 
+            box-shadow: inset 0 0 0 1px rgba(52, 152, 219, 0.1);
+        }
+
+        .timestamp { font-size: 11px; color: #95a5a6; font-variant-numeric: tabular-nums; }
+        
+        .img-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000; /* Cinema backdrop ensures image bounds are visible */
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border: 1px solid #eee;
+            min-height: 250px;
+        }
+
+        .img-preview { 
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Forces the entire image to stay visible */
+            display: block; 
+        }
+
+        .controls-area {
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        button { 
+            border: none; 
+            padding: 12px 20px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            color: white; 
+            font-weight: 600; 
+            width: 100%; 
+            max-width: 300px; /* Limit button length */
+            transition: opacity 0.2s;
+            display: block;
+            margin: 0 auto;
+        }
+        button:active { opacity: 0.8; }
+        button.show { background: #3498db; margin-bottom: 10px; }
+        button.remove { background: #e74c3c; }
+
+        nav { margin-bottom: 20px; background: #fff; padding: 12px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: 600; font-size: 14px; }
+
+        @media (max-width: 900px) {
+            .container { 
+                flex-direction: column-reverse; 
+                gap: 0; 
+            }
+
+            h1 { 
+                text-align: center; 
+                font-size: 18px;
+                background: #fff;
+                padding: 15px 0;
+                margin: 0;
+                border-bottom: 1px solid #eee;
+            }
+
+            .preview-pane { 
+                position: sticky; 
+                top: 0; /* Sticks to top of viewport */
+                z-index: 1000;
+                width: 100%; 
+                background: #fff;
+                padding: 10px;
+                border-bottom: 3px solid #3498db;
+                border-radius: 0;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                max-height: 50vh;
+            }
+
+            .img-container { 
+                height: 30vh; /* Prominent but contained size */
+                min-height: 180px;
+                background: #000;
+                margin-bottom: 8px;
+                border-radius: 6px;
+            }
+
+            .history-list { 
+                padding-top: 10px;
+                height: auto;
+                overflow-y: visible;
+                flex: none;
+            }
+
+            .history-item {
+                background: #fff;
+                border: 1px solid #e1e8ed;
+                margin: 0 10px 8px 10px;
+                /* This ensures when we scroll to an item, it lands nicely */
+                scroll-margin-top: 250px; 
+            }
+
+            .controls-area {
+                padding-top: 8px;
+                border-top: none;
+                display: flex;
+                gap: 8px;
+            }
+            button.show { flex: 2; padding: 10px; font-size: 14px; margin-bottom: 0; max-width: none; }
+            button.remove { flex: 1; padding: 10px 5px; font-size: 12px; max-width: none; }
+            #preview-filename { font-size: 11px; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        }
+        </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="main-wrapper">
+        
+        <h1>Image History</h1>
+        
+        <div class="container">
+            <!-- Master List -->
+            <div class="history-list" id="history-list">
+                <div style="text-align:center; padding: 40px; color: #bdc3c7;">Loading history...</div>
+            </div>
+            
+            <!-- Detail Preview -->
+            <div class="preview-pane" id="preview-section">
+                <div id="preview-filename" style="margin-bottom: 15px; font-weight: 600; font-size: 14px; color: #34495e; word-break: break-all;">Select an image</div>
+                
+                <div class="img-container">
+                    <img id="preview-img" class="img-preview" src="" style="display: none;">
+                    <div id="no-selection" style="color: #bdc3c7; font-size: 14px;">No image selected</div>
+                </div>
+
+                <div id="preview-controls" style="display: none;" class="controls-area">
+                    <button class="show" onclick="showSelected()">Show on Frame</button>
+                    <button class="remove" onclick="removeSelected()">Remove Image</button>
+                    <p style="font-size: 11px; color: #95a5a6; margin-top: 12px; margin-bottom: 0;">This moves the image to the <strong>removed</strong> folder.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "/api";
+        let selectedFilename = null;
+        let selectedPath = null;
+        let currentHistory = [];
+        let currentIndex = -1;
+
+        async function showSelected() {
+            if (!selectedFilename) return;
+
+            try {
+                const btn = document.querySelector('button.show');
+                const oldText = btn.textContent;
+                btn.disabled = true;
+                
+                const response = await fetch(`${API_BASE}/show`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        path: selectedPath,
+                        filename: selectedFilename 
+                    })
+                });
+                
+                if (response.ok) {
+                    btn.textContent = "Displaying...";
+                    btn.style.background = "#2ecc71";
+                    setTimeout(() => {
+                        btn.textContent = oldText;
+                        btn.style.background = "#3498db";
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    const data = await response.json();
+                    alert("Error: " + (data.error || "Failed to show image"));
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                console.error("Error showing image", e);
+            }
+        }
+
+        async function checkCameraVisibility() {
+            try {
+                const configRes = await fetch(`${API_BASE}/config`);
+                const config = await configRes.json();
+                const navCam = document.getElementById('nav-camera');
+                if (navCam && config.CAMERA && config.CAMERA.enabled === 'True') {
+                    navCam.style.display = 'inline';
+                }
+            } catch (e) {
+                console.error("Error checking camera visibility", e);
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/history`);
+                const history = await response.json();
+                currentHistory = history;
+                const list = document.getElementById('history-list');
+                list.innerHTML = '';
+                
+                if (history.length === 0) {
+                    list.innerHTML = '<div style="text-align:center; padding: 40px; color: #95a5a6;">No history available</div>';
+                    return;
+                }
+                
+                history.forEach((item, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.onclick = () => selectImage(item.name, div, item.path, index);
+                    
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = item.name;
+                    nameSpan.style.fontSize = '13px';
+                    nameSpan.style.fontWeight = '500';
+                    nameSpan.style.overflow = 'hidden';
+                    nameSpan.style.textOverflow = 'ellipsis';
+                    nameSpan.style.whiteSpace = 'nowrap';
+                    nameSpan.style.paddingRight = '10px';
+                    
+                    const timeSpan = document.createElement('span');
+                    const date = new Date(item.timestamp);
+                    timeSpan.className = 'timestamp';
+                    timeSpan.textContent = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    timeSpan.style.flexShrink = '0';
+                    
+                    div.appendChild(nameSpan);
+                    div.appendChild(timeSpan);
+                    list.appendChild(div);
+
+                    if (index === 0 && currentIndex === -1) {
+                        selectImage(item.name, div, item.path, 0);
+                    }
+                });
+
+                // Maintain selection after list refresh if possible
+                if (currentIndex !== -1 && list.children[currentIndex]) {
+                    const activeDiv = list.children[currentIndex];
+                    activeDiv.classList.add('active');
+                }
+
+            } catch (e) {
+                console.error("Error loading history", e);
+            }
+        }
+
+        function selectImage(filename, element, path, index) {
+            selectedFilename = filename;
+            selectedPath = path;
+            currentIndex = index;
+            
+            // UI updates
+            document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+            
+            // Auto-scroll visibility fix
+            element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            document.getElementById('preview-filename').textContent = filename;
+            document.getElementById('no-selection').style.display = 'none';
+            
+            const img = document.getElementById('preview-img');
+            const imagePath = path || filename;
+            img.src = `${API_BASE}/image/${encodeURIComponent(imagePath)}`;
+            img.style.display = 'block';
+            document.getElementById('preview-controls').style.display = 'block';
+            
+            // Scroll to top of preview on mobile only if clicked
+            if (window.innerWidth <= 900 && event && event.type === 'click') {
+                document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // Keyboard Navigation
+        window.addEventListener('keydown', (e) => {
+            if (currentHistory.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextIndex = (currentIndex + 1 < currentHistory.length) ? currentIndex + 1 : currentIndex;
+                const element = document.getElementById('history-list').children[nextIndex];
+                if (element) selectImage(currentHistory[nextIndex].name, element, currentHistory[nextIndex].path, nextIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevIndex = (currentIndex - 1 >= 0) ? currentIndex - 1 : 0;
+                const element = document.getElementById('history-list').children[prevIndex];
+                if (element) selectImage(currentHistory[prevIndex].name, element, currentHistory[prevIndex].path, prevIndex);
+            }
+        });
+
+        async function removeSelected() {
+            if (!selectedFilename || !confirm(`Really remove ${selectedFilename}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/remove`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: selectedFilename })
+                });
+                
+                if (response.ok) {
+                    document.getElementById('preview-img').style.display = 'none';
+                    document.getElementById('preview-controls').style.display = 'none';
+                    document.getElementById('no-selection').style.display = 'block';
+                    document.getElementById('preview-filename').textContent = "Image removed";
+                    
+                    const oldIndex = currentIndex;
+                    await loadHistory(); // Refresh list
+                    
+                    // Select next available item
+                    const newList = document.getElementById('history-list');
+                    const nextToSelect = newList.children[oldIndex] || newList.children[newList.children.length - 1];
+                    if (nextToSelect && currentHistory.length > 0) {
+                        const newIdx = Math.min(oldIndex, currentHistory.length - 1);
+                        selectImage(currentHistory[newIdx].name, newList.children[newIdx], currentHistory[newIdx].path, newIdx);
+                    }
+                }
+            } catch (e) {
+                console.error("Error moving file", e);
+            }
+        }
+
+        loadHistory();
+        checkCameraVisibility();
+    </script>
+</body>
+</html>

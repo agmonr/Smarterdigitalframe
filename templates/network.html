@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Settings - Digital Frame Manager</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 10px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.5rem; margin-bottom: 20px; text-align: center; }
+        .info-card { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-top: 20px; border-top: 5px solid #3498db; }
+        ul { list-style: none; padding: 0; }
+        
+        .wifi-item {
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .wifi-item:last-child { border-bottom: none; }
+        
+        .wifi-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ssid-name { font-weight: bold; font-size: 1.1rem; color: #2c3e50; }
+        .signal-strength { font-size: 0.85rem; color: #7f8c8d; }
+
+        .wifi-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .input-group {
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        input[type="password"], input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .show-pass-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #666;
+            cursor: pointer;
+            user-select: none;
+            width: fit-content;
+        }
+
+        button, .btn { 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            color: white; 
+            background: #3498db;
+            font-weight: bold;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button:hover, .btn:hover { background: #2980b9; }
+        button:active, .btn:active { transform: scale(0.98); }
+        
+        .scan-btn { width: 100%; margin-bottom: 10px; }
+
+        @media (max-width: 600px) {
+            .container { padding: 15px; }
+            .wifi-actions { flex-direction: column; align-items: stretch; }
+            .input-group { min-width: 100%; }
+            button, .btn { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        <h1>Network Settings</h1>
+        
+        <div class="info-card">
+            <h3>Connection Status</h3>
+            <p>Current Network: <strong id="current-ssid" style="color: #27ae60;">Loading...</strong></p>
+        </div>
+
+        <div class="info-card">
+            <h3>Available WiFi Networks</h3>
+            <button class="scan-btn" onclick="scanWiFi()">Scan Networks</button>
+            <ul id="wifi-list"></ul>
+        </div>
+    </div>
+
+    <script>
+        async function updateStatus() {
+            try {
+                const res = await fetch("/api/network/status");
+                const data = await res.json();
+                document.getElementById('current-ssid').innerText = data.ssid;
+            } catch (e) {
+                document.getElementById('current-ssid').innerText = "Unknown";
+            }
+        }
+        
+        updateStatus();
+
+        function togglePassword(ssid) {
+            const input = document.getElementById(`pass-${ssid}`);
+            const checkbox = document.getElementById(`show-${ssid}`);
+            input.type = checkbox.checked ? "text" : "password";
+        }
+
+        async function scanWiFi() {
+            const list = document.getElementById('wifi-list');
+            list.innerHTML = '<li style="text-align: center; padding: 20px; color: #666;">Scanning for networks...</li>';
+            try {
+                const res = await fetch("/api/network/scan");
+                const data = await res.json();
+                list.innerHTML = '';
+                
+                if (!data.networks || data.networks.length === 0) {
+                    list.innerHTML = '<li style="text-align: center; padding: 20px; color: #666;">No networks found.</li>';
+                    return;
+                }
+
+                data.networks.forEach(network => {
+                    const li = document.createElement('li');
+                    li.className = 'wifi-item';
+                    li.innerHTML = `
+                        <div class="wifi-info">
+                            <span class="ssid-name">${network.ssid}</span>
+                            <span class="signal-strength">Signal: ${network.signal}%</span>
+                        </div>
+                        <div class="wifi-actions">
+                            <div class="input-group">
+                                <input type="password" id="pass-${network.ssid}" placeholder="Enter password">
+                                <label class="show-pass-label">
+                                    <input type="checkbox" id="show-${network.ssid}" onchange="togglePassword('${network.ssid}')"> 
+                                    Show password
+                                </label>
+                            </div>
+                            <button class="btn" onclick="connect('${network.ssid}')">Connect</button>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                list.innerHTML = '<li style="text-align: center; padding: 20px; color: #e74c3c;">Error scanning networks.</li>';
+            }
+        }
+
+        async function connect(ssid) {
+            const password = document.getElementById(`pass-${ssid}`).value;
+            const btn = event.target;
+            const originalText = btn.innerText;
+            
+            btn.disabled = true;
+            btn.innerText = 'Connecting...';
+            
+            try {
+                const res = await fetch("/api/network/wifi", {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ssid, password})
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('Successfully connected to ' + ssid);
+                    updateStatus();
+                } else {
+                    alert('Failed to connect: ' + data.error);
+                }
+            } catch (e) {
+                alert('Connection request failed');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        }
+    </script>
+</body>
+</html>

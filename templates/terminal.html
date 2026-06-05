@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Terminal - Digital Frame</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <style>
+        body { background: #0c0c0c; color: #fff; margin: 0; padding: 0; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .container { flex-grow: 1; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; width: 100%; max-width: 100%; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .controls { display: flex; align-items: center; gap: 10px; }
+        select { background: #333; color: #fff; border: 1px solid #555; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+        #terminal { flex-grow: 1; margin-top: 5px; background: #1e1e1e; border-radius: 4px; overflow: hidden; width: 100%; }
+        h1 { color: #2ecc71; margin: 0; font-size: 20px; }
+        .help-text { color: #7f8c8d; font-size: 12px; }
+    </style>
+</head>
+<body>
+    {% include "nav.html" %}
+    <div class="container">
+        <div class="header-row">
+            <div>
+                <h1>Interactive System Terminal</h1>
+                <div class="help-text">Fully interactive shell with 256-color support.</div>
+            </div>
+            <div class="controls">
+                <label for="scheme-select" style="font-size: 12px; color: #7f8c8d;">Scheme:</label>
+                <select id="scheme-select">
+                    <option value="matrix">Matrix (Green on Black)</option>
+                    <option value="retro">Retro (Amber on Black)</option>
+                    <option value="solarized-dark">Solarized Dark</option>
+                    <option value="monokai">Monokai</option>
+                    <option value="standard">Standard (White on Black)</option>
+                    <option value="light">Light (Black on White)</option>
+                </select>
+            </div>
+        </div>
+        <div id="terminal"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const schemes = {
+            'matrix': { background: '#000000', foreground: '#00ff00', cursor: '#00ff00' },
+            'retro': { background: '#000000', foreground: '#ffb000', cursor: '#ffb000' },
+            'solarized-dark': { background: '#002b36', foreground: '#839496', cursor: '#93a1a1' },
+            'monokai': { background: '#272822', foreground: '#f8f8f2', cursor: '#f8f8f2' },
+            'standard': { background: '#000000', foreground: '#ffffff', cursor: '#ffffff' },
+            'light': { background: '#ffffff', foreground: '#000000', cursor: '#000000' }
+        };
+
+        const savedScheme = localStorage.getItem('terminal-scheme') || 'matrix';
+        document.getElementById('scheme-select').value = savedScheme;
+        
+        // Match initial body background to scheme
+        document.body.style.background = schemes[savedScheme].background === '#ffffff' ? '#f0f0f0' : '#0c0c0c';
+
+        // Initialize Terminal
+        const term = new Terminal({
+            cursorBlink: true,
+            theme: schemes[savedScheme],
+            fontFamily: 'Courier New, Courier, monospace',
+            fontSize: 14,
+            allowProposedApi: true
+        });
+
+        // Update theme on change
+        document.getElementById('scheme-select').addEventListener('change', (e) => {
+            const newScheme = e.target.value;
+            term.options.theme = schemes[newScheme];
+            localStorage.setItem('terminal-scheme', newScheme);
+            // Apply background color to body as well for a seamless look
+            document.body.style.background = schemes[newScheme].background === '#ffffff' ? '#f0f0f0' : '#0c0c0c';
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal'));
+        
+        // Initial fit with a small delay to ensure DOM is ready
+        setTimeout(() => {
+            fitAddon.fit();
+            // Decrease height by 3 lines as requested
+            if (term.rows > 5) {
+                term.resize(term.cols, term.rows - 3);
+            }
+            if (socket.connected) {
+                socket.emit('resize', { cols: term.cols, rows: term.rows });
+            }
+        }, 200);
+
+        // Connect to the PTY namespace
+        const socket = io('/pty', { 
+            path: '/socket.io',
+            transports: ['websocket', 'polling'] 
+        });
+
+        socket.on('connect', () => {
+            term.write('\r\n*** Connected to Backend Shell ***\r\n');
+            // Immediate resize sync on connect
+            fitAddon.fit();
+            if (term.rows > 5) term.resize(term.cols, term.rows - 3);
+            socket.emit('resize', { cols: term.cols, rows: term.rows });
+        });
+
+        socket.on('output', (data) => {
+            term.write(data.data);
+        });
+
+        socket.on('disconnect', () => {
+            term.write('\r\n*** Disconnected ***\r\n');
+        });
+
+        socket.on('connect_error', (err) => {
+            term.write('\r\n*** Connection Error: ' + err.message + ' ***\r\n');
+        });
+
+        // Forward keystrokes
+        term.onData((data) => {
+            socket.emit('input', { input: data });
+        });
+
+        // Handle resizing
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            if (term.rows > 5) term.resize(term.cols, term.rows - 3);
+            socket.emit('resize', { cols: term.cols, rows: term.rows });
+        });
+        
+        // Auto-focus
+        term.focus();
+        document.getElementById('terminal').addEventListener('click', () => term.focus());
+    </script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folder Selection - Digital Frame</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #2c3e50; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: bold; }
+        .folder-list { margin-top: 20px; }
+        .folder-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
+        .folder-item.hidden { display: none; }
+        .folder-item input { margin-right: 15px; width: 20px; height: 20px; }
+        .toggle-btn { 
+            cursor: pointer; 
+            margin-right: 10px; 
+            width: 20px; 
+            height: 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            background: #eee;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            user-select: none;
+        }
+        .toggle-btn:hover { background: #ddd; }
+        .toggle-btn.empty { visibility: hidden; }
+        .folder-name { flex-grow: 1; cursor: pointer; }
+        .actions { margin-top: 30px; }
+        button { padding: 10px 25px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #2980b9; }
+        .info { margin-top: 10px; color: #7f8c8d; font-size: 14px; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        
+        
+        <h1>Folder Selection</h1>
+        <p>Select which folders to include in the slideshow. If none are selected, all images will be shown.</p>
+        
+        <div style="margin-bottom: 15px;">
+            <button onclick="toggleAll(true)" style="padding: 5px 15px; font-size: 14px; background: #2ecc71;">Select All</button>
+            <button onclick="toggleAll(false)" style="padding: 5px 15px; font-size: 14px; background: #e74c3c;">Unselect All</button>
+        </div>
+
+        <div class="folder-list" id="folder-list">
+            Loading folders...
+        </div>
+
+        <div class="actions">
+            <button onclick="saveFolders()">Save Selection</button>
+            <div class="info">The frame service will restart automatically to apply changes.</div>
+        </div>
+    </div>
+
+    <script>
+        const expandedFolders = new Set();
+
+        async function loadFolders() {
+            try {
+                const response = await fetch('/api/folders');
+                const data = await response.json();
+                
+                const list = document.getElementById('folder-list');
+                list.innerHTML = '';
+                
+                const selected = data.selected_folders === 'all' ? [] : data.selected_folders.split(',');
+                
+                if (data.available_folders.length === 0) {
+                    list.innerHTML = 'No subdirectories found in the pictures folder.';
+                    return;
+                }
+
+                data.available_folders.forEach(folder => {
+                    const item = document.createElement('div');
+                    item.className = 'folder-item';
+                    item.dataset.path = folder;
+                    
+                    const depth = (folder.match(/\//g) || []).length;
+                    item.style.paddingLeft = (10 + (depth * 25)) + 'px';
+                    
+                    // Check if has children
+                    const hasChildren = data.available_folders.some(f => f.startsWith(folder + '/'));
+                    const parentPath = folder.includes('/') ? folder.substring(0, folder.lastIndexOf('/')) : '';
+                    item.dataset.parent = parentPath;
+
+                    // Hide if parent is not expanded
+                    if (parentPath && !expandedFolders.has(parentPath)) {
+                        item.classList.add('hidden');
+                    }
+
+                    const toggle = document.createElement('div');
+                    toggle.className = 'toggle-btn' + (hasChildren ? '' : ' empty');
+                    toggle.textContent = expandedFolders.has(folder) ? '−' : '+';
+                    toggle.onclick = (e) => {
+                        e.stopPropagation();
+                        if (expandedFolders.has(folder)) {
+                            expandedFolders.delete(folder);
+                            collapseSubfolders(folder);
+                        } else {
+                            expandedFolders.add(folder);
+                            expandSubfolders(folder);
+                        }
+                        loadFolders(); // Re-render to update visibility and icons
+                    };
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = folder;
+                    checkbox.id = 'folder-' + folder;
+                    if (data.selected_folders === 'all' || selected.includes(folder)) {
+                        checkbox.checked = true;
+                    }
+                    
+                    const label = document.createElement('label');
+                    label.className = 'folder-name';
+                    label.htmlFor = 'folder-' + folder;
+                    // Show only the folder name, not full path
+                    label.textContent = folder.split('/').pop();
+
+                    checkbox.addEventListener('change', (e) => {
+                        const isChecked = e.target.checked;
+                        const path = e.target.value;
+                        const allCheckboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
+                        allCheckboxes.forEach(cb => {
+                            if (cb.value.startsWith(path + '/')) {
+                                cb.checked = isChecked;
+                            }
+                        });
+                    });
+                    
+                    item.appendChild(toggle);
+                    item.appendChild(checkbox);
+                    item.appendChild(label);
+                    list.appendChild(item);
+                });
+            } catch (err) {
+                console.error(err);
+                document.getElementById('folder-list').textContent = 'Error loading folders.';
+            }
+        }
+
+        function expandSubfolders(path) {
+            // Handled by re-rendering in loadFolders
+        }
+
+        function collapseSubfolders(path) {
+            // Remove all descendants from expandedFolders
+            for (const expanded of expandedFolders) {
+                if (expanded.startsWith(path + '/')) {
+                    expandedFolders.delete(expanded);
+                }
+            }
+        }
+
+        function toggleAll(checked) {
+            const checkboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = checked);
+        }
+
+        async function saveFolders() {
+            const checkboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
+            const selected = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) selected.push(cb.value);
+            });
+            
+            const value = selected.length === checkboxes.length ? 'all' : (selected.length === 0 ? 'all' : selected.join(','));
+            
+            try {
+                const response = await fetch('/api/folders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selected: value })
+                });
+                
+                if (!response.ok) {
+                    alert('Error saving settings.');
+                } else {
+                    alert('Settings saved successfully! The frame will now restart.');
+                }
+            } catch (err) {
+                alert('Connection error.');
+            }
+        }
+
+        loadFolders();
+    </script>
+</body>
+</html>

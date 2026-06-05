@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Photos Sync - Digital Frame</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #2c3e50; }
+        h2 { color: #34495e; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; margin-top: 30px; }
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: bold; }
+        .album-list { margin-top: 20px; border-collapse: collapse; width: 100%; }
+        .album-list th, .album-list td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        .album-list th { background: #f8f9fa; }
+        
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; border-radius: 0; }
+            nav { display: flex; flex-wrap: wrap; gap: 5px; }
+            nav a { margin-right: 10px; font-size: 14px; }
+            h1 { font-size: 24px; }
+            .btn-sync { width: 100%; }
+            .album-list { font-size: 13px; }
+            .album-list th, .album-list td { padding: 8px 5px; }
+        }
+        
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .status-syncing { background: #ffeaa7; color: #d35400; }
+        .status-idle { background: #dfe6e9; color: #636e72; }
+        .status-error { background: #ff7675; color: white; }
+        .status-success { background: #55efc4; color: #00b894; }
+        .add-form { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-top: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-sync { background: #2ecc71; color: white; margin-bottom: 20px; }
+        .help-text { font-size: 13px; color: #7f8c8d; margin-top: 5px; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        
+        
+        <h1>Google Photos Shared Albums</h1>
+        <p>Sync your Google Photos shared albums to your digital frame. Shared albums must be "public" via their link.</p>
+        
+        <button class="btn btn-sync" onclick="triggerSync()">Sync All Albums Now</button>
+
+        <h2>Configured Albums</h2>
+        <div class="table-responsive">
+            <table class="album-list">
+                <thead>
+                    <tr>
+                        <th>Name / ID</th>
+                        <th>Local Path</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="album-table-body">
+                    <!-- Albums will be loaded here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="add-form">
+            <h2>Add New Shared Album</h2>
+            <div class="form-group">
+                <label>Album Name (ID)</label>
+                <input type="text" id="album-id" placeholder="e.g. family_vacation">
+                <div class="help-text">A unique identifier. A folder will be created automatically based on this name.</div>
+            </div>
+            <div class="form-group">
+                <label>Shared Album URL</label>
+                <input type="text" id="album-url" placeholder="https://photos.app.goo.gl/...">
+            </div>
+            <button class="btn btn-primary" onclick="addAlbum()">Add Album</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "/api";
+
+        async function checkCameraVisibility() {
+            try {
+                const configRes = await fetch(`${API_BASE}/config`);
+                const config = await configRes.json();
+                if (config.CAMERA && config.CAMERA.enabled === 'True') {
+                    document.getElementById('nav-camera').style.display = 'inline';
+                }
+            } catch (e) {
+                console.error("Error checking camera visibility", e);
+            }
+        }
+
+        async function loadAlbums() {
+            try {
+                const response = await fetch(`${API_BASE}/albums`);
+                const albums = await response.json();
+                const tbody = document.getElementById('album-table-body');
+                tbody.innerHTML = '';
+                
+                albums.forEach(album => {
+                    const tr = document.createElement('tr');
+                    let statusClass = 'status-idle';
+                    if (album.status.includes('Syncing')) statusClass = 'status-syncing';
+                    if (album.status.includes('Error')) statusClass = 'status-error';
+                    if (album.status.includes('Synced')) statusClass = 'status-success';
+
+                    tr.innerHTML = `
+                        <td><strong>${album.id}</strong></td>
+                        <td><code>${album.path}</code></td>
+                        <td><span class="status-badge ${statusClass}">${album.status}</span></td>
+                        <td>
+                            <button class="btn btn-danger" onclick="deleteAlbum('${album.id}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error("Error loading albums", e);
+            }
+        }
+
+        async function addAlbum() {
+            const id = document.getElementById('album-id').value;
+            const url = document.getElementById('album-url').value;
+
+            if (!id || !url) {
+                alert("Please fill in all fields");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/albums`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, url })
+                });
+                const result = await response.json();
+                if (result.error) {
+                    alert(result.error);
+                } else {
+                    document.getElementById('album-id').value = '';
+                    document.getElementById('album-url').value = '';
+                    loadAlbums();
+                }
+            } catch (e) {
+                alert("Error adding album");
+            }
+        }
+
+        async function deleteAlbum(id) {
+            if (!confirm(`Are you sure you want to delete ${id}?`)) return;
+            try {
+                await fetch(`${API_BASE}/albums/${id}`, { method: 'DELETE' });
+                loadAlbums();
+            } catch (e) {
+                alert("Error deleting album");
+            }
+        }
+
+        async function triggerSync() {
+            try {
+                await fetch(`${API_BASE}/albums/sync`, { method: 'POST' });
+                setTimeout(loadAlbums, 1000);
+            } catch (e) {
+                alert("Error starting sync");
+            }
+        }
+
+        loadAlbums();
+        checkCameraVisibility();
+        setInterval(loadAlbums, 5000); // Refresh status every 5 seconds
+    </script>
+</body>
+</html>

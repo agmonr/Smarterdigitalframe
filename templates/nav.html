@@ -1,0 +1,157 @@
+<style>
+    :root {
+        --primary-color: #2563eb;
+        --nav-bg: #ffffff;
+        --nav-text: #374151;
+        --nav-hover: #f3f4f6;
+        --dropdown-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    .top-nav {
+        display: flex;
+        flex-direction: row;
+        justify-content: center;
+        align-items: center;
+        background: var(--nav-bg);
+        padding: 0.5rem 1rem;
+        margin: 0 auto 2rem auto;
+        width: 100%;
+        max-width: 1000px;
+        box-sizing: border-box;
+        border-bottom: 1px solid #e5e7eb;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        gap: 0.5rem;
+    }
+
+    .top-nav a, .dropbtn {
+        color: var(--nav-text);
+        text-decoration: none;
+        font-weight: 500;
+        padding: 0.6rem 1rem;
+        border-radius: 0.375rem;
+        transition: all 0.2s ease;
+        font-size: 0.925rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .top-nav a:hover, .dropdown:hover .dropbtn {
+        background-color: var(--nav-hover);
+        color: var(--primary-color);
+    }
+
+    /* Active link style */
+    .top-nav a.active {
+        background-color: #eff6ff;
+        color: var(--primary-color);
+        font-weight: 600;
+    }
+
+    .dropdown { position: relative; }
+
+    .dropdown-content {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #fff;
+        min-width: 180px;
+        box-shadow: var(--dropdown-shadow);
+        z-index: 10000;
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+        padding: 0.5rem 0;
+        margin-top: 0.25rem;
+        overflow: hidden;
+        animation: fadeIn 0.15s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .dropdown-content a {
+        color: var(--nav-text);
+        padding: 0.75rem 1rem;
+        border-radius: 0;
+        font-size: 0.875rem;
+        border-bottom: none;
+    }
+
+    .dropdown-content a:hover {
+        background-color: var(--nav-hover);
+        color: var(--primary-color);
+    }
+
+    .dropdown:hover .dropdown-content { display: block; }
+    
+    /* Hover bridge */
+    .dropdown::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 100%;
+        height: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .top-nav {
+            flex-wrap: wrap;
+            padding: 0.5rem;
+        }
+        .top-nav a, .dropbtn {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.85rem;
+        }
+    }
+</style>
+
+<div class="top-nav" id="main-nav">
+    <a href="/" data-path="/">Dashboard</a>
+    <a href="/history" data-path="/history">History</a>
+    <a href="/google-photos" data-path="/google-photos">Google Photos</a>
+    <a href="/camera" id="nav-camera" data-path="/camera" style="display: none;">Camera</a>
+    <a href="/live-video" id="nav-live-video" data-path="/live-video" style="display: none;">Live Video</a>
+    <a href="/folders" data-path="/folders">Folders</a>
+    <a href="/settings" data-path="/settings">Settings</a>
+    <div class="dropdown">
+        <span class="dropbtn">Utils <small>&#9662;</small></span>
+        <div class="dropdown-content">
+            <a href="/terminal">Terminal</a>
+            <a href="/system">Status</a>
+            <a href="/network">Network</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Highlight active link and check camera visibility
+    document.addEventListener('DOMContentLoaded', async () => {
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('.top-nav a');
+        navLinks.forEach(link => {
+            if (link.getAttribute('href') === currentPath || 
+                (currentPath === '/' && link.getAttribute('href') === '/')) {
+                link.classList.add('active');
+            }
+        });
+
+        // Check if camera is enabled
+        try {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            if (config.CAMERA && config.CAMERA.enabled && config.CAMERA.enabled.toLowerCase() === 'true') {
+                document.getElementById('nav-camera').style.display = 'flex';
+                document.getElementById('nav-live-video').style.display = 'flex';
+            }
+        } catch (err) {
+            console.error("Error checking camera status", err);
+        }
+    });
+</script>
