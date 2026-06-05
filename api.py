@@ -25,7 +25,6 @@ CORS(app)
 PROJECT_ROOT = common.PROJECT_ROOT
 CONFIG_FILE = common.CONFIG_FILE
 STATE_FILE = common.STATE_FILE
-HISTORY_FILE = common.HISTORY_FILE
 REMOVE_DIR = common.REMOVE_DIR
 
 get_config = common.get_config
@@ -275,14 +274,11 @@ def get_state():
 
 @app.route('/api/history', methods=['GET'])
 def get_history():
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, 'r') as f:
-                history = json.load(f)
-            return jsonify(history[::-1]) # Newest first
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    return jsonify([])
+    try:
+        history = common.get_history()
+        return jsonify(history)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/remove', methods=['POST'])
 def remove_image():
@@ -315,20 +311,8 @@ def remove_image():
                 except:
                     pass
 
-            # Remove from history.json
-            if os.path.exists(HISTORY_FILE):
-                try:
-                    with open(HISTORY_FILE, 'r') as f:
-                        history = json.load(f)
-                    
-                    # Remove all entries with this filename
-                    new_history = [item for item in history if item.get('name') != filename]
-                    
-                    if len(new_history) != len(history):
-                        with open(HISTORY_FILE, 'w') as f:
-                            json.dump(new_history, f)
-                except Exception as e:
-                    logging.error(f"Error updating history after removal: {e}")
+            # Remove from history
+            common.delete_from_history(filename)
 
             # Move the file
             os.makedirs(remove_dir, exist_ok=True)

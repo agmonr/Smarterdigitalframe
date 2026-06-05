@@ -73,6 +73,11 @@
                 </select>
                 <div class="info-text">Limits updates to every 30 seconds to save CPU/Memory.</div>
             </div>
+            <div class="form-group">
+                <label>History Retention (Days)</label>
+                <input type="number" id="history-retention-days" min="1" max="365">
+                <div class="info-text">How many days to keep image display history in the database.</div>
+            </div>
 
             <h2>Clock Overlay</h2>
             <div class="form-group">
@@ -231,6 +236,7 @@
                 document.getElementById('interval').value = defaults.interval;
                 document.getElementById('group-size').value = defaults.groupsize;
                 document.getElementById('weak-machine').value = (defaults.weak_machine && defaults.weak_machine.toLowerCase() === 'true') ? 'True' : 'False';
+                document.getElementById('history-retention-days').value = defaults.history_retention_days || 30;
                 document.getElementById('show-time').value = defaults.showtime.toLowerCase() === 'true' ? 'True' : 'False';
                 document.getElementById('periodic-clock').value = (defaults.showperiodicclock && defaults.showperiodicclock.toLowerCase() === 'true') ? 'True' : 'False';
                 document.getElementById('scheduled-clock').value = (defaults.showscheduledclock && defaults.showscheduledclock.toLowerCase() === 'true') ? 'True' : 'False';
@@ -270,6 +276,7 @@
                     interval: document.getElementById('interval').value,
                     groupsize: document.getElementById('group-size').value,
                     weak_machine: document.getElementById('weak-machine').value,
+                    history_retention_days: document.getElementById('history-retention-days').value,
                     showtime: document.getElementById('show-time').value,
                     showperiodicclock: document.getElementById('periodic-clock').value,
                     showscheduledclock: document.getElementById('scheduled-clock').value,

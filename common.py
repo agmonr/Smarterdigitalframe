@@ -4,12 +4,14 @@ import json
 import subprocess
 import time
 import logging
+import sqlite3
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(PROJECT_ROOT, 'config.ini')
 CONFIG_EXAMPLE = os.path.join(PROJECT_ROOT, 'config.ini.example')
 STATE_FILE = os.path.join(PROJECT_ROOT, 'state.json')
 HISTORY_FILE = os.path.join(PROJECT_ROOT, 'history.json')
+DB_FILE = os.path.join(PROJECT_ROOT, 'history.db')
 REMOVE_DIR = os.path.join(PROJECT_ROOT, 'removed/')
 LOG_DIR = os.path.join(PROJECT_ROOT, 'logs/')
 
@@ -18,6 +20,119 @@ if not os.path.exists(LOG_DIR):
 
 if not os.path.exists(REMOVE_DIR):
     os.makedirs(REMOVE_DIR)
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    # Optimizations for SSD/SD Cards
+    conn.execute('PRAGMA journal_mode = WAL')
+    conn.execute('PRAGMA synchronous = NORMAL')
+    conn.execute('PRAGMA cache_size = -2000') # ~2MB cache
+    conn.execute('PRAGMA temp_store = MEMORY')
+    return conn
+
+def init_db():
+    """Initialize SQLite database and migrate existing history.json if it exists."""
+    # Always check if table exists, even if DB file exists
+    conn = get_db_connection()
+    try:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_history_name ON history(name)')
+        conn.commit()
+        
+        # Migration logic
+        if os.path.exists(HISTORY_FILE):
+            try:
+                with open(HISTORY_FILE, 'r') as f:
+                    history = json.load(f)
+                if isinstance(history, list):
+                    for entry in history:
+                        if isinstance(entry, dict):
+                            conn.execute(
+                                'INSERT INTO history (name, path, timestamp) VALUES (?, ?, ?)',
+                                (entry.get('name'), entry.get('path'), entry.get('timestamp'))
+                            )
+                    conn.commit()
+                # Rename history.json after successful migration
+                os.rename(HISTORY_FILE, HISTORY_FILE + '.bak')
+            except Exception as e:
+                print(f"Error migrating history: {e}")
+        
+        # Cleanup old entries on init
+        try:
+            config = get_config()
+            retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
+            conn.execute(
+                "DELETE FROM history WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')",
+                (retention_days,)
+            )
+            conn.commit()
+        except:
+            pass
+    finally:
+        conn.close()
+
+def get_history(limit=1000):
+    """Retrieve history from SQLite, newest first."""
+    init_db()
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute('SELECT name, path, timestamp FROM history ORDER BY id DESC LIMIT ?', (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Error getting history: {e}")
+        return []
+
+def add_to_history(name, path, timestamp):
+    """Add a new entry to history and maintain limits."""
+    init_db()
+    try:
+        config = get_config()
+        retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
+        
+        conn = get_db_connection()
+        conn.execute(
+            'INSERT INTO history (name, path, timestamp) VALUES (?, ?, ?)',
+            (name, path, timestamp)
+        )
+        
+        # 1. Cleanup by days
+        conn.execute(
+            "DELETE FROM history WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')",
+            (retention_days,)
+        )
+        
+        # 2. Safety cap: Keep only the latest 10000 entries regardless of days
+        conn.execute('''
+            DELETE FROM history WHERE id NOT IN (
+                SELECT id FROM history ORDER BY id DESC LIMIT 10000
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error adding to history: {e}")
+
+def delete_from_history(name):
+    """Delete all entries with a specific filename from history."""
+    init_db()
+    try:
+        conn = get_db_connection()
+        conn.execute('DELETE FROM history WHERE name = ?', (name,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error deleting from history: {e}")
 
 def get_config():
     config = configparser.ConfigParser(interpolation=None)
@@ -131,25 +246,6 @@ def save_state(state):
             json.dump(state, f)
     except Exception as e:
         print(f"Error saving state: {e}")
-
-def get_history():
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return []
-
-def save_history(history):
-    try:
-        # Limit history size to 1000 entries
-        if len(history) > 1000:
-            history = history[-1000:]
-        with open(HISTORY_FILE, 'w') as f:
-            json.dump(history, f)
-    except Exception as e:
-        print(f"Error saving history: {e}")
 
 def get_images(image_dir=None):
     if image_dir is None:

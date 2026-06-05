@@ -14,7 +14,9 @@ echo "Setting up Digital Frame service in $PROJECT_DIR..."
 # 0. Install system dependencies
 echo "Installing system dependencies..."
 apt-get update
-apt-get install -y python3-venv python3-pip nginx logrotate libopenjp2-7 libtiff6 libcamera-apps-lite dnsmasq network-manager
+apt-get install -y python3-venv python3-pip nginx \
+	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite\
+       	dnsmasq network-manager apt-listchanges cloud-init python3-apt
 
 # 1. Setup Virtual Environment
 echo "Setting up Python virtual environment and installing requirements..."

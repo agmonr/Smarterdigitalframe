@@ -71,7 +71,6 @@ def load_config_values():
 last_config_mtime = load_config_values()
 
 STATE_FILE = common.STATE_FILE
-HISTORY_FILE = common.HISTORY_FILE
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 WIDTH = 0
@@ -134,23 +133,9 @@ def update_history(img_path, save=True):
         except:
             pass
             
-        entry = {
-            "name": os.path.basename(img_path), 
-            "path": rel_path,
-            "timestamp": now.isoformat()
-        }
-        history = []
-        if os.path.exists(HISTORY_FILE):
-            with open(HISTORY_FILE, "r") as f:
-                try: history = json.load(f)
-                except: history = []
-        history.append(entry)
-        if len(history) > 3600:
-            history = history[-3600:]
-        with open(HISTORY_FILE, "w") as f:
-            json.dump(history, f)
+        common.add_to_history(os.path.basename(img_path), rel_path, now.isoformat())
     except Exception as e:
-        logger.error(f"Error updating history file: {e}")
+        logger.error(f"Error updating history: {e}")
 
 def set_cursor(visible):
     """Hide/Show cursor using ANSI and system-level commands."""
@@ -405,13 +390,11 @@ def get_next_image_index(images, idx, images_shown_in_group):
     if images_shown_in_group >= GROUP_SIZE:
         # Try up to 5 times to find an image not shown in the last 24 hours
         recent_history = []
-        if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, "r") as f:
-                    full_history = json.load(f)
-                cutoff = datetime.now().timestamp() - 86400
-                recent_history = [e["name"] for e in full_history if datetime.fromisoformat(e["timestamp"]).timestamp() > cutoff]
-            except: pass
+        try:
+            full_history = common.get_history(limit=5000)
+            cutoff = datetime.now().timestamp() - 86400
+            recent_history = [e["name"] for e in full_history if datetime.fromisoformat(e["timestamp"]).timestamp() > cutoff]
+        except: pass
 
         for _ in range(5):
             new_idx = random.randint(0, len(images) - 1)
@@ -549,22 +532,20 @@ def main():
                     # Try to use history to find the previous image
                     navigated = False
                     try:
-                        if os.path.exists(HISTORY_FILE):
-                            with open(HISTORY_FILE, "r") as f:
-                                history = json.load(f)
-                            current_filename = os.path.basename(images[idx])
-                            found_idx = -1
-                            for i in range(len(history) - 1, -1, -1):
-                                if history[i]["name"] == current_filename:
-                                    found_idx = i
+                        history = common.get_history(limit=50)
+                        current_filename = os.path.basename(images[idx])
+                        found_idx = -1
+                        for i in range(len(history)):
+                            if history[i]["name"] == current_filename:
+                                found_idx = i
+                                break
+                        if found_idx != -1 and found_idx + 1 < len(history):
+                            prev_filename = history[found_idx + 1]["name"]
+                            for i in range(len(images)):
+                                if os.path.basename(images[i]) == prev_filename:
+                                    idx = i
+                                    navigated = True
                                     break
-                            if found_idx > 0:
-                                prev_filename = history[found_idx - 1]["name"]
-                                for i in range(len(images)):
-                                    if os.path.basename(images[i]) == prev_filename:
-                                        idx = i
-                                        navigated = True
-                                        break
                     except Exception as e:
                         logger.error(f"Error navigating via history: {e}")
                     
