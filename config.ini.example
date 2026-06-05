@@ -25,7 +25,7 @@ screenonhour = 6
 groupsize = 20
 selected_folders = 
 weak_machine = False
-history_retention_days = 30
+history_retention_days = 2
 
 [MOTION]
 enabled = False
