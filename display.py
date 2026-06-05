@@ -70,6 +70,10 @@ def load_config_values():
 
 last_config_mtime = load_config_values()
 
+# Cache for state updates to prevent excessive disk writes
+_last_state_data = None
+_last_state_time = 0
+
 STATE_FILE = common.STATE_FILE
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -96,6 +100,7 @@ def notify_api_screen_state(on):
         pass
 
 def update_state(type="image", img_path=None):
+    global _last_state_data, _last_state_time
     try:
         # Determine current image display name (relative path if possible)
         current_img = "Idle"
@@ -108,17 +113,28 @@ def update_state(type="image", img_path=None):
         elif type == "clock":
             current_img = "Clock"
 
-        state = {
+        state_data = {
             "type": type,
             "current_image": current_img,
             "full_path": img_path if img_path else "",
-            "last_update": datetime.now().isoformat(),
             "pid": os.getpid()
         }
+        
+        # Throttle writes: Only write if state changed OR if 10 seconds passed (heartbeat)
+        current_time = time.time()
+        if state_data == _last_state_data and (current_time - _last_state_time) < 10:
+            return
+
+        state = state_data.copy()
+        state["last_update"] = datetime.now().isoformat()
+        
         fd, temp_path = tempfile.mkstemp(dir=".", prefix="state_tmp_")
         with os.fdopen(fd, 'w') as f:
             json.dump(state, f)
         os.replace(temp_path, STATE_FILE)
+        
+        _last_state_data = state_data
+        _last_state_time = current_time
     except Exception as e:
         logger.error(f"Error updating state file: {e}")
 
