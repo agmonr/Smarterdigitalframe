@@ -20,12 +20,27 @@ apt-get install -y python3-venv python3-pip nginx \
 
 # 1. Setup Virtual Environment with uv
 echo "Setting up Python virtual environment and installing requirements using uv..."
-# Install uv if not found
+
+# Ensure uv is available
 if ! command -v uv &> /dev/null; then
-    echo "uv not found, installing..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    # Add uv to PATH for the current session
-    source $HOME/.cargo/env
+    if [ -f "$HOME/.local/bin/uv" ]; then
+        export PATH="$HOME/.local/bin:$PATH"
+    elif [ -f "$HOME/.cargo/bin/uv" ]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    else
+        echo "uv not found, installing..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # The installer usually puts it in $HOME/.local/bin
+        export PATH="$HOME/.local/bin:$PATH"
+        # Also try to source the env file if it was created
+        [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
+    fi
+fi
+
+# Final check
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv could not be installed or found in PATH."
+    exit 1
 fi
 
 if [ ! -d "$PROJECT_DIR/venv" ]; then
@@ -33,7 +48,7 @@ if [ ! -d "$PROJECT_DIR/venv" ]; then
     uv venv "$PROJECT_DIR/venv"
 fi
 
-# Always update requirements to ensure 'coments' (commands) work after a pull
+# Always update requirements
 echo "Installing/Updating dependencies from requirements.txt using uv..."
 uv pip install --python "$PROJECT_DIR/venv/bin/python" -r "$PROJECT_DIR/requirements.txt"
 
