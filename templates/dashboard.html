@@ -155,7 +155,7 @@
                 }
 
                 if (state.current_image && state.current_image !== "Clock" && state.current_image !== "Idle") {
-                    info.textContent = (state.type === "clock" ? "Clock Overlay on: " : "Viewing: ") + state.current_image;
+                    info.textContent = (state.type === "clock" ? "Clock Overlay on: " : "") + state.current_image;
                     preview.style.display = "block";
                     preview.src = `/api/image/${state.current_image}?t=${Date.now()}`;
                     link.style.display = "inline-block";
