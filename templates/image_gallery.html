@@ -51,24 +51,27 @@
                         return;
                     }
 
-                    images.forEach(imageFilename => {
+                    images.forEach(imageItem => {
+                        const imageFilename = imageItem.name || imageItem;
+                        const imagePath = imageItem.path || imageFilename;
+                        const lowerFilename = imageFilename.toLowerCase();
+                        
                         // Basic filtering, assuming filenames from history are images
-                        // You might want more robust filtering if history contains non-image data
-                        if (imageFilename.endsWith('.jpg') || imageFilename.endsWith('.png') || imageFilename.endsWith('.jpeg')) {
-                            const imageItem = document.createElement('div');
-                            imageItem.classList.add('image-item');
+                        if (lowerFilename.endsWith('.jpg') || lowerFilename.endsWith('.png') || lowerFilename.endsWith('.jpeg') || lowerFilename.endsWith('.gif') || lowerFilename.endsWith('.bmp')) {
+                            const imageItemDiv = document.createElement('div');
+                            imageItemDiv.classList.add('image-item');
 
                             const imgElement = document.createElement('img');
-                            // Use the existing API endpoint to serve the image
-                            imgElement.src = `/api/image/${imageFilename}`; 
+                            // Use the existing API endpoint to serve the image, using full path
+                            imgElement.src = `/api/image/${encodeURIComponent(imagePath)}`; 
                             imgElement.alt = imageFilename;
 
                             const filenameLabel = document.createElement('p');
                             filenameLabel.textContent = imageFilename;
 
-                            imageItem.appendChild(imgElement);
-                            imageItem.appendChild(filenameLabel);
-                            galleryContainer.appendChild(imageItem);
+                            imageItemDiv.appendChild(imgElement);
+                            imageItemDiv.appendChild(filenameLabel);
+                            galleryContainer.appendChild(imageItemDiv);
                         }
                     });
                 })
