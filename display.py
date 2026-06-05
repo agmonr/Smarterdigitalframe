@@ -389,16 +389,11 @@ def get_next_image_index(images, idx, images_shown_in_group):
     # If we've shown enough images in this group, pick a new random starting point
     if images_shown_in_group >= GROUP_SIZE:
         # Try up to 5 times to find an image not shown in the last 24 hours
-        recent_history = []
-        try:
-            full_history = common.get_history(limit=5000)
-            cutoff = datetime.now().timestamp() - 86400
-            recent_history = [e["name"] for e in full_history if datetime.fromisoformat(e["timestamp"]).timestamp() > cutoff]
-        except: pass
+        recent_paths = common.get_recent_paths(days=1)
 
         for _ in range(5):
             new_idx = random.randint(0, len(images) - 1)
-            if os.path.basename(images[new_idx]) not in recent_history:
+            if images[new_idx] not in recent_paths:
                 return new_idx, 0
         
         # If still in history after 5 tries, just continue the sequence
@@ -535,16 +530,16 @@ def main():
                     navigated = False
                     try:
                         history = common.get_history(limit=50)
-                        current_filename = os.path.basename(images[idx])
+                        current_path = images[idx]
                         found_idx = -1
                         for i in range(len(history)):
-                            if history[i]["name"] == current_filename:
+                            if history[i]["path"] == current_path:
                                 found_idx = i
                                 break
                         if found_idx != -1 and found_idx + 1 < len(history):
-                            prev_filename = history[found_idx + 1]["name"]
+                            prev_path = history[found_idx + 1]["path"]
                             for i in range(len(images)):
-                                if os.path.basename(images[i]) == prev_filename:
+                                if images[i] == prev_path:
                                     idx = i
                                     navigated = True
                                     break

@@ -134,6 +134,23 @@ def delete_from_history(name):
     except Exception as e:
         print(f"Error deleting from history: {e}")
 
+def get_recent_paths(days=1):
+    """Retrieve only relative paths of images shown in the last N days (SQL-native)."""
+    init_db()
+    try:
+        conn = get_db_connection()
+        # Use SQLite's native datetime filtering for maximum performance
+        cursor = conn.execute(
+            "SELECT DISTINCT path FROM history WHERE datetime(timestamp) > datetime('now', '-' || ? || ' days')",
+            (days,)
+        )
+        paths = [row['path'] for row in cursor.fetchall()]
+        conn.close()
+        return set(paths) # Use set for O(1) lookup performance
+    except Exception as e:
+        print(f"Error getting recent paths: {e}")
+        return set()
+
 def get_config():
     config = configparser.ConfigParser(interpolation=None)
     # Load defaults from example file first
