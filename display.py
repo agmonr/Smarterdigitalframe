@@ -400,7 +400,9 @@ def get_next_image_index(images, idx, images_shown_in_group):
             new_idx = random.randint(0, len(images) - 1)
             if os.path.basename(images[new_idx]) not in recent_history:
                 return new_idx, 0
-        return random.randint(0, len(images) - 1), 0
+        
+        # If still in history after 5 tries, just continue the sequence
+        return (idx + 1) % len(images), 0
     else:
         # Otherwise, just cycle to the next image
         return (idx + 1) % len(images), images_shown_in_group
