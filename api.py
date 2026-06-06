@@ -319,21 +319,34 @@ def get_history():
 def remove_image():
     data = request.json
     filename = data.get('filename')
-    if not filename:
-        return jsonify({"error": "No filename provided"}), 400
+    path = data.get('path') # Optional: relative path from imagedir
+    
+    if not filename and not path:
+        return jsonify({"error": "No filename or path provided"}), 400
     
     config = get_config()
     image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
     remove_dir = config.get('DEFAULT', 'removedir', fallback=REMOVE_DIR)
     
     src = None
-    for root, dirs, files in os.walk(image_dir):
-        if filename in files:
-            src = os.path.join(root, filename)
-            break
+    if path:
+        # If path is provided, try direct join first
+        potential_src = os.path.join(image_dir, path)
+        if os.path.exists(potential_src):
+            src = potential_src
+    
+    # Fallback to searching if path didn't work or wasn't provided
+    if not src:
+        for root, dirs, files in os.walk(image_dir):
+            if filename in files:
+                src = os.path.join(root, filename)
+                break
             
     if src and os.path.exists(src):
         try:
+            # Determine relative path for preserving structure in removed/
+            rel_path = os.path.relpath(src, image_dir)
+            
             # Check if this is the currently displayed image
             is_current = False
             if os.path.exists(STATE_FILE):
@@ -341,7 +354,8 @@ def remove_image():
                     with open(STATE_FILE, 'r') as f:
                         state = json.load(f)
                         current_image = state.get('current_image', '')
-                        if filename == os.path.basename(current_image) or filename == current_image:
+                        # Match against both filename and relative path
+                        if filename == os.path.basename(current_image) or rel_path == current_image:
                             is_current = True
                 except:
                     pass
@@ -349,9 +363,15 @@ def remove_image():
             # Remove from history
             common.delete_from_history(filename)
 
-            # Move the file
-            os.makedirs(remove_dir, exist_ok=True)
-            dst = os.path.join(remove_dir, filename)
+            # Move the file preserving subfolder structure
+            dst = os.path.join(remove_dir, rel_path)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            
+            # If destination exists, add timestamp to avoid collision
+            if os.path.exists(dst):
+                base, ext = os.path.splitext(dst)
+                dst = f"{base}_{int(time.time())}{ext}"
+                
             shutil.move(src, dst)
 
             # If it was the current image, trigger next

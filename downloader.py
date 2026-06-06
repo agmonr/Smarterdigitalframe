@@ -5,6 +5,7 @@ import json
 import logging
 import shutil
 import time
+import hashlib
 import common
 from datetime import datetime
 
@@ -14,6 +15,11 @@ logger = common.setup_logger(__name__)
 STATUS_FILE = os.path.join(common.PROJECT_ROOT, "album_status.json")
 ALBUMS_FILE = os.path.join(common.PROJECT_ROOT, "albums.json")
 STORAGE_GUARDRAIL_GB = 1.0
+
+def get_image_filename(url):
+    """Use MD5 of the base URL to get a stable, unique filename."""
+    base_url = url.split('=')[0]
+    return hashlib.md5(base_url.encode()).hexdigest() + ".jpg"
 
 def get_album_status():
     if os.path.exists(STATUS_FILE):
@@ -161,12 +167,31 @@ def download_album(album_id, url, output_dir):
 
         count = 0
         new_count = 0
+        verified_filenames = set()
+        total_images = len(unique_images)
+        
         for i, img_url in enumerate(unique_images):
-            base_url = img_url.split('=')[0]
-            full_img_url = base_url + "=w3000"
-            file_path = os.path.join(output_dir, f"image_{i}.jpg")
+            progress_msg = f"Album: {album_id} ({i+1}/{total_images})"
+            update_global_status("Syncing", f"Downloading {progress_msg}")
+            update_album_status(album_id, f"Syncing ({i+1}/{total_images})")
+            
+            filename = get_image_filename(img_url)
+            verified_filenames.add(filename)
+            file_path = os.path.join(output_dir, filename)
+            
+            # Use relative path from 'images' to check against 'removed'
+            images_base = os.path.join(common.PROJECT_ROOT, "images")
+            rel_path = os.path.relpath(file_path, images_base)
+            removed_path = os.path.join(common.PROJECT_ROOT, "removed", rel_path)
+            
+            # Skip if file was previously removed
+            if os.path.exists(removed_path):
+                logger.debug(f"Skipping previously removed image: {rel_path}")
+                continue
             
             if not os.path.exists(file_path):
+                base_url = img_url.split('=')[0]
+                full_img_url = base_url + "=w3000"
                 start_time = time.time()
                 try:
                     img_res = requests.get(full_img_url, headers=headers, timeout=15)
@@ -183,9 +208,9 @@ def download_album(album_id, url, output_dir):
                             # Or if it's "lagging" the system. Let's use 2s as a baseline for "slow".
                             if download_time > 2.0:
                                 logger.info(f"Slow download detected ({download_time:.2f}s). Throttling for {throttle_pause}s")
-                                update_global_status("Waiting due to slow download", f"Throttling for {throttle_pause}s after slow image download")
+                                update_global_status("Waiting due to slow download", f"Throttling for {throttle_pause}s after slow image download ({i+1}/{total_images})")
                                 time.sleep(throttle_pause)
-                                update_global_status("Syncing", f"Downloading album: {album_id}")
+                                update_global_status("Syncing", f"Downloading {progress_msg}")
                         else:
                             logger.warning(f"URL {base_url} did not return an image")
                     else:
@@ -194,6 +219,16 @@ def download_album(album_id, url, output_dir):
                     logger.error(f"Error processing image {i}: {e}")
             count += 1
         
+        # Cleanup orphaned files (no longer in album or old naming style)
+        for f in os.listdir(output_dir):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png')) and f not in verified_filenames:
+                orphaned_path = os.path.join(output_dir, f)
+                try:
+                    os.remove(orphaned_path)
+                    logger.info(f"Cleaned up orphaned image: {f}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up orphaned image {f}: {e}")
+
         final_files = [f for f in os.listdir(output_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total_in_dir = len(final_files)
         
