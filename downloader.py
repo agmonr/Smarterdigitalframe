@@ -66,7 +66,7 @@ def get_free_space_gb():
     return usage.free / (2**30)
 
 def check_storage_guardrail():
-    """Ensure at least 1GB free space by evicting oldest albums."""
+    """Ensure at least 1GB free space by deleting individual images, oldest first."""
     free_gb = get_free_space_gb()
     if free_gb >= STORAGE_GUARDRAIL_GB:
         return
@@ -74,39 +74,47 @@ def check_storage_guardrail():
     logger.info(f"Storage guardrail triggered: {free_gb:.2f}GB free. Need {STORAGE_GUARDRAIL_GB}GB.")
     update_global_status("Evicting", f"Low space: {free_gb:.2f}GB. Freeing up to {STORAGE_GUARDRAIL_GB}GB.")
     
-    # Get all local album directories
-    albums = get_albums()
-    album_dirs = []
-    base_dir = os.path.join(common.PROJECT_ROOT, "images", "google_photos")
-    
-    if not os.path.exists(base_dir):
+    # Get currently playing image to protect it
+    current_image_path = None
+    state = common.get_state()
+    if state and "full_path" in state:
+        current_image_path = state["full_path"]
+
+    # Collect all images with their mtime
+    all_images = []
+    image_dir = os.path.join(common.PROJECT_ROOT, "images")
+    if not os.path.exists(image_dir):
         return
 
-    for d in os.listdir(base_dir):
-        full_path = os.path.join(base_dir, d)
-        if os.path.isdir(full_path):
-            # Use mtime as "least recently used/synced"
-            album_dirs.append((full_path, os.path.getmtime(full_path)))
+    for root, _, files in os.walk(image_dir):
+        for f in files:
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                full_path = os.path.join(root, f)
+                if full_path == current_image_path:
+                    continue
+                try:
+                    all_images.append((full_path, os.path.getmtime(full_path)))
+                except:
+                    continue
     
     # Sort by mtime (oldest first)
-    album_dirs.sort(key=lambda x: x[1])
+    all_images.sort(key=lambda x: x[1])
     
-    for album_path, _ in album_dirs:
+    evicted_count = 0
+    for img_path, _ in all_images:
         if get_free_space_gb() >= STORAGE_GUARDRAIL_GB:
             break
         
-        album_name = os.path.basename(album_path)
-        logger.info(f"Evicting album: {album_name}")
-        update_global_status("Evicting", f"Deleting oldest album: {album_name}")
         try:
-            shutil.rmtree(album_path)
-            # Find album ID to update status
-            for album in albums:
-                if os.path.basename(album['path']) == album_name:
-                    update_album_status(album['id'], "Evicted (Low Space)")
-                    break
+            os.remove(img_path)
+            evicted_count += 1
+            if evicted_count % 10 == 0:
+                logger.info(f"Evicted {evicted_count} images... Current free: {get_free_space_gb():.2f}GB")
         except Exception as e:
-            logger.error(f"Error evicting {album_path}: {e}")
+            logger.error(f"Error evicting {img_path}: {e}")
+            
+    logger.info(f"Guardrail complete. Evicted {evicted_count} images. Free space: {get_free_space_gb():.2f}GB")
+    update_global_status("Idle", f"Storage cleared: {evicted_count} old images removed.")
 
 def get_albums():
     if os.path.exists(ALBUMS_FILE):
