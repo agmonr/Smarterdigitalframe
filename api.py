@@ -179,13 +179,48 @@ def capture_image():
 # Google Photos Sync Thread
 def google_photos_sync_thread():
     print('Google Photos sync thread started')
+    last_sync_time = 0
     while True:
         try:
-            downloader.sync_all()
+            # 1. Determine currently playing album
+            current_album_id = None
+            if os.path.exists(STATE_FILE):
+                try:
+                    with open(STATE_FILE, 'r') as f:
+                        state = json.load(f)
+                        current_img = state.get('current_image', '')
+                        if 'google_photos/' in current_img:
+                            current_album_id = current_img.split('google_photos/')[1].split('/')[0]
+                except:
+                    pass
+
+            # 2. Find next album in queue
+            albums = downloader.get_albums()
+            if albums:
+                next_album = None
+                if current_album_id:
+                    # Find index of current album
+                    for i, album in enumerate(albums):
+                        if album['id'] == current_album_id or os.path.basename(album['path']) == current_album_id:
+                            next_album = albums[(i + 1) % len(albums)]
+                            break
+                
+                if not next_album:
+                    next_album = albums[0]
+
+                # 3. Sync the "next" album
+                # We sync it if it's been a while since the last global sync, 
+                # OR if we want to ensure the next one is always ready.
+                # Let's sync one album every cycle to keep it "pipelined".
+                downloader.download_album(next_album['id'], next_album['url'], next_album['path'])
+            
+            # 4. Wait before next check. Pipelining means we stay ahead of playback.
+            # If a group is 20 images and interval is 10s, that's 200s per group.
+            # Checking every 60s is plenty.
+            time.sleep(60)
         except Exception as e:
             print(f'Auto-sync error: {e}')
-        # Sync every hour
-        time.sleep(3600)
+            time.sleep(60)
 
 def get_avg_light(frame):
     return np.mean(frame)
@@ -442,6 +477,11 @@ def next_image():
     with open("next_image.tmp", "w") as f: f.write("next")
     return jsonify({"status": "success"})
 
+@app.route('/api/next-group', methods=['POST'])
+def next_group():
+    with open("next_group.tmp", "w") as f: f.write("next")
+    return jsonify({"status": "success"})
+
 @app.route('/api/prev', methods=['POST'])
 def prev_image():
     with open("prev_image.tmp", "w") as f: f.write("prev")
@@ -623,6 +663,51 @@ def run_command():
 import psutil
 import shutil
 
+@app.route('/api/sync/status', methods=['GET'])
+def get_sync_status():
+    sync_status_path = os.path.join(PROJECT_ROOT, "sync_status.json")
+    if os.path.exists(sync_status_path):
+        try:
+            with open(sync_status_path, 'r') as f:
+                status = json.load(f)
+            
+            # Add "Next Up" info based on current playback
+            current_album_id = None
+            if os.path.exists(STATE_FILE):
+                try:
+                    with open(STATE_FILE, 'r') as f:
+                        state = json.load(f)
+                        current_img = state.get('current_image', '')
+                        if 'google_photos/' in current_img:
+                            current_album_id = current_img.split('google_photos/')[1].split('/')[0]
+                except:
+                    pass
+
+            albums = downloader.get_albums()
+            next_album_obj = None
+            if albums:
+                if current_album_id:
+                    for i, album in enumerate(albums):
+                        if album['id'] == current_album_id or os.path.basename(album['path']) == current_album_id:
+                            next_album_obj = albums[(i + 1) % len(albums)]
+                            break
+                if not next_album_obj:
+                    next_album_obj = albums[0]
+
+                status["next_album"] = next_album_obj["id"]
+                
+                # Try to find a thumbnail for next album
+                next_path = os.path.join(PROJECT_ROOT, "images", next_album_obj["path"])
+                if os.path.exists(next_path):
+                    files = sorted([f for f in os.listdir(next_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+                    if files:
+                        status["next_thumbnail"] = f"/api/image/{next_album_obj['path']}/{files[0]}"
+
+            return jsonify(status)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    return jsonify({"operation": "Idle", "message": "No sync activity recorded."})
+
 @app.route('/api/system/status', methods=['GET'])
 def get_system_status():
     # CPU Temp (Reads from standard Linux path)
@@ -670,10 +755,22 @@ def system_status_page():
 @app.route('/api/albums', methods=['GET'])
 def get_albums_api():
     albums = downloader.get_albums()
-    status = downloader.get_album_status()
+    status_data = downloader.get_album_status()
     for album in albums:
-        album['status'] = status.get(album['id'], "Idle")
+        stat = status_data.get(album['id'], "Idle")
+        if isinstance(stat, dict):
+            album['status'] = stat.get('status', 'Idle')
+            album['last_sync'] = stat.get('last_sync')
+            album['file_count'] = stat.get('file_count')
+            album['size_mb'] = stat.get('size_mb')
+        else:
+            album['status'] = stat
     return jsonify(albums)
+
+@app.route('/api/albums/sync', methods=['POST'])
+def trigger_sync_api():
+    threading.Thread(target=downloader.sync_all, daemon=True).start()
+    return jsonify({"status": "success", "message": "Global sync initiated"})
 
 @app.route('/api/albums', methods=['POST'])
 def add_album_api():
@@ -684,12 +781,12 @@ def add_album_api():
     if not all([album_id, url]):
         return jsonify({"error": "Missing id or url"}), 400
         
-    safe_id = "".join([c for c in album_id if c.isalnum() or c in (' ', '.', '_', '-')]).strip()
-    safe_id = safe_id.replace(' ', '_')
-    
-    if not safe_id:
-        return jsonify({"error": "Invalid album ID"}), 400
+    # Strictly allow only English alphanumeric characters, dots, underscores, and hyphens.
+    # No spaces, no non-English characters.
+    if not re.match(r'^[a-zA-Z0-9._-]+$', album_id):
+        return jsonify({"error": "Album ID must only contain English letters, numbers, dots, underscores, or hyphens (no spaces or special characters)"}), 400
 
+    safe_id = album_id.strip()
     path = os.path.join('google_photos', safe_id)
     albums = downloader.get_albums()
     for album in albums:
@@ -699,6 +796,18 @@ def add_album_api():
     albums.append({"id": album_id, "url": url, "path": path})
     with open(downloader.ALBUMS_FILE, 'w') as f:
         json.dump(albums, f)
+    
+    # Auto-add to selected_folders if not 'all'
+    config = get_config()
+    selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+    if selected != 'all':
+        current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+        if path not in current_selected:
+            current_selected.append(path)
+            config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
+            with open(CONFIG_FILE, 'w') as f:
+                config.write(f)
+            restart_frame() # Restart to apply folder change
         
     return jsonify({"status": "success"})
 

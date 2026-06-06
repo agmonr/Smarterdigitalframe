@@ -3,13 +3,17 @@ import re
 import requests
 import json
 import logging
+import shutil
+import time
 import common
+from datetime import datetime
 
 # Setup Logging using common library
 logger = common.setup_logger(__name__)
 
 STATUS_FILE = os.path.join(common.PROJECT_ROOT, "album_status.json")
 ALBUMS_FILE = os.path.join(common.PROJECT_ROOT, "albums.json")
+STORAGE_GUARDRAIL_GB = 1.0
 
 def get_album_status():
     if os.path.exists(STATUS_FILE):
@@ -20,14 +24,83 @@ def get_album_status():
             return {}
     return {}
 
-def update_album_status(album_id, status):
+def update_album_status(album_id, status, extra_info=None):
     status_data = get_album_status()
-    status_data[album_id] = status
+    if album_id not in status_data or isinstance(status_data[album_id], str):
+        status_data[album_id] = {"status": status, "last_sync": datetime.now().isoformat()}
+    else:
+        status_data[album_id]["status"] = status
+        status_data[album_id]["last_sync"] = datetime.now().isoformat()
+    
+    if extra_info:
+        status_data[album_id].update(extra_info)
+        
     try:
         with open(STATUS_FILE, 'w') as f:
             json.dump(status_data, f)
     except Exception as e:
         logger.error(f"Error updating status file: {e}")
+
+def update_global_status(operation, message=""):
+    """Update a global status file for the dashboard."""
+    global_status = {
+        "operation": operation,
+        "message": message,
+        "timestamp": datetime.now().isoformat(),
+        "free_space_gb": get_free_space_gb()
+    }
+    try:
+        with open(os.path.join(common.PROJECT_ROOT, "sync_status.json"), 'w') as f:
+            json.dump(global_status, f)
+    except Exception as e:
+        logger.error(f"Error updating global status: {e}")
+
+def get_free_space_gb():
+    usage = shutil.disk_usage(common.PROJECT_ROOT)
+    return usage.free / (2**30)
+
+def check_storage_guardrail():
+    """Ensure at least 1GB free space by evicting oldest albums."""
+    free_gb = get_free_space_gb()
+    if free_gb >= STORAGE_GUARDRAIL_GB:
+        return
+
+    logger.info(f"Storage guardrail triggered: {free_gb:.2f}GB free. Need {STORAGE_GUARDRAIL_GB}GB.")
+    update_global_status("Evicting", f"Low space: {free_gb:.2f}GB. Freeing up to {STORAGE_GUARDRAIL_GB}GB.")
+    
+    # Get all local album directories
+    albums = get_albums()
+    album_dirs = []
+    base_dir = os.path.join(common.PROJECT_ROOT, "images", "google_photos")
+    
+    if not os.path.exists(base_dir):
+        return
+
+    for d in os.listdir(base_dir):
+        full_path = os.path.join(base_dir, d)
+        if os.path.isdir(full_path):
+            # Use mtime as "least recently used/synced"
+            album_dirs.append((full_path, os.path.getmtime(full_path)))
+    
+    # Sort by mtime (oldest first)
+    album_dirs.sort(key=lambda x: x[1])
+    
+    for album_path, _ in album_dirs:
+        if get_free_space_gb() >= STORAGE_GUARDRAIL_GB:
+            break
+        
+        album_name = os.path.basename(album_path)
+        logger.info(f"Evicting album: {album_name}")
+        update_global_status("Evicting", f"Deleting oldest album: {album_name}")
+        try:
+            shutil.rmtree(album_path)
+            # Find album ID to update status
+            for album in albums:
+                if os.path.basename(album['path']) == album_name:
+                    update_album_status(album['id'], "Evicted (Low Space)")
+                    break
+        except Exception as e:
+            logger.error(f"Error evicting {album_path}: {e}")
 
 def get_albums():
     if os.path.exists(ALBUMS_FILE):
@@ -39,11 +112,13 @@ def get_albums():
     return []
 
 def download_album(album_id, url, output_dir):
+    check_storage_guardrail()
     update_album_status(album_id, "Syncing...")
+    update_global_status("Syncing", f"Downloading album: {album_id}")
+    
     logger.debug(f"Starting sync for album: {album_id} ({url})")
     try:
         if not os.path.isabs(output_dir):
-            # Use project-local images directory as base
             base_dir = os.path.join(common.PROJECT_ROOT, "images")
             output_dir = os.path.join(base_dir, output_dir)
             
@@ -54,18 +129,10 @@ def download_album(album_id, url, output_dir):
         }
         
         response = requests.get(url, headers=headers, timeout=30)
-        logger.debug(f"Album page request status: {response.status_code}")
-        
         if response.status_code != 200:
             update_album_status(album_id, f"Error: HTTP {response.status_code}")
             return False
 
-        # Look for image URLs in the JSON data
-        # Google Photos uses a specific format for these URLs
-        # They usually look like: https://lh3.googleusercontent.com/pw/AM-JK...
-        # or https://lh3.googleusercontent.com/lr/A...
-        
-        # This regex looks for common Google Photos image base URLs
         image_patterns = [
             r'https://lh3\.googleusercontent\.com/[a-zA-Z0-9_-]+',
             r'https://photos\.google\.com/share/[a-zA-Z0-9_-]+/photo/[a-zA-Z0-9_-]+'
@@ -76,16 +143,9 @@ def download_album(album_id, url, output_dir):
             matches = re.findall(pattern, response.text)
             found_urls.update(matches)
             
-        logger.debug(f"Initial regex found {len(found_urls)} URLs")
-
-        # More specific extraction from JSON blobs
-        # Looking for ["https://lh3.googleusercontent.com/pw/...", width, height]
         json_urls = re.findall(r'\"(https://lh3\.googleusercontent\.com/[^\"]+)\"', response.text)
         found_urls.update(json_urls)
         
-        # Filter: 
-        # 1. Must be long enough to be a real photo ID
-        # 2. Must not be a known UI element
         unique_images = []
         for img in found_urls:
             if len(img.split('/')[-1]) < 60: continue
@@ -95,25 +155,22 @@ def download_album(album_id, url, output_dir):
                 
         logger.info(f"Filtered to {len(unique_images)} candidate images for {album_id}")
         
-        # Count existing images in the directory
-        existing_files = [f for f in os.listdir(output_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        initial_count = len(existing_files)
-        
+        config = common.get_config()
+        interval = config.getint('DEFAULT', 'interval', fallback=10)
+        throttle_pause = interval / 2.0
+
         count = 0
         new_count = 0
         for i, img_url in enumerate(unique_images):
-            # Strip existing parameters (anything after =)
             base_url = img_url.split('=')[0]
-            
-            # We use =w3000 to get a high-res version
             full_img_url = base_url + "=w3000"
             file_path = os.path.join(output_dir, f"image_{i}.jpg")
             
-            try:
-                # Check if we should download
-                if not os.path.exists(file_path):
-                    logger.debug(f"Downloading image {i}: {full_img_url}")
+            if not os.path.exists(file_path):
+                start_time = time.time()
+                try:
                     img_res = requests.get(full_img_url, headers=headers, timeout=15)
+                    download_time = time.time() - start_time
                     
                     if img_res.status_code == 200:
                         content_type = img_res.headers.get('Content-Type', '')
@@ -121,19 +178,32 @@ def download_album(album_id, url, output_dir):
                             with open(file_path, 'wb') as f:
                                 f.write(img_res.content)
                             new_count += 1
+                            
+                            # Adaptive Throttling: If download is slow (> 2s for example, or relative to interval)
+                            # Or if it's "lagging" the system. Let's use 2s as a baseline for "slow".
+                            if download_time > 2.0:
+                                logger.info(f"Slow download detected ({download_time:.2f}s). Throttling for {throttle_pause}s")
+                                update_global_status("Waiting due to slow download", f"Throttling for {throttle_pause}s after slow image download")
+                                time.sleep(throttle_pause)
+                                update_global_status("Syncing", f"Downloading album: {album_id}")
                         else:
-                            logger.warning(f"URL {base_url} did not return an image (Content-Type: {content_type})")
+                            logger.warning(f"URL {base_url} did not return an image")
                     else:
                         logger.warning(f"Failed to download image {i}: HTTP {img_res.status_code}")
-                count += 1
-            except Exception as e:
-                logger.error(f"Error processing image {i}: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing image {i}: {e}")
+            count += 1
         
-        # Final count of images in directory
         final_files = [f for f in os.listdir(output_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total_in_dir = len(final_files)
         
-        update_album_status(album_id, f"Synced. Files: {total_in_dir} (New: {new_count})")
+        album_size = sum(os.path.getsize(os.path.join(output_dir, f)) for f in final_files) / (2**20) # MB
+        
+        update_album_status(album_id, "Synced", {
+            "file_count": total_in_dir,
+            "new_files": new_count,
+            "size_mb": round(album_size, 2)
+        })
         return True
     except Exception as e:
         logger.error(f"Sync failed for {album_id}: {e}", exc_info=True)
@@ -141,9 +211,11 @@ def download_album(album_id, url, output_dir):
         return False
 
 def sync_all():
+    update_global_status("Idle", "Checking for updates...")
     albums = get_albums()
     for album in albums:
         download_album(album['id'], album['url'], album['path'])
+    update_global_status("Idle", "Sync complete.")
 
 if __name__ == "__main__":
     sync_all()

@@ -397,6 +397,23 @@ def is_hour_in_range(hour, start, end):
         # Wrapped range (e.g., 22 to 07 where start > end)
         return hour >= start or hour < end
 
+def get_random_image_index(images):
+    if not images:
+        return 0
+    
+    # Try up to 5 times to find an image not shown in the last 24 hours
+    recent_paths = common.get_recent_paths(days=1)
+    
+    new_idx = random.randint(0, len(images) - 1)
+    for _ in range(5):
+        new_idx = random.randint(0, len(images) - 1)
+        rel_path = os.path.relpath(images[new_idx], common.PROJECT_ROOT)
+        if rel_path not in recent_paths:
+            return new_idx
+    
+    # If still in history after 5 tries, just return the last random one chosen
+    return new_idx
+
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
         return 0, 0
@@ -404,16 +421,8 @@ def get_next_image_index(images, idx, images_shown_in_group):
     images_shown_in_group += 1
     # If we've shown enough images in this group, pick a new random starting point
     if images_shown_in_group >= GROUP_SIZE:
-        # Try up to 5 times to find an image not shown in the last 24 hours
-        recent_paths = common.get_recent_paths(days=1)
-
-        for _ in range(5):
-            new_idx = random.randint(0, len(images) - 1)
-            if images[new_idx] not in recent_paths:
-                return new_idx, 0
-        
-        # If still in history after 5 tries, just continue the sequence
-        return (idx + 1) % len(images), 0
+        new_idx = get_random_image_index(images)
+        return new_idx, 0
     else:
         # Otherwise, just cycle to the next image
         return (idx + 1) % len(images), images_shown_in_group
@@ -451,7 +460,7 @@ def main():
     clear_console()
 
     images.sort()
-    idx = random.randint(0, len(images) - 1)
+    idx = get_random_image_index(images)
     images_shown_in_group = 0
     last_hour = now.hour
     last_minute = -1
@@ -530,7 +539,16 @@ def main():
                 except Exception as e:
                     logger.error(f"Error handling show_image.tmp: {e}")
             
-            if os.path.exists("next_image.tmp"):
+            if os.path.exists("next_group.tmp"):
+                os.remove("next_group.tmp")
+                manual_prev = False
+                if images:
+                    idx = get_random_image_index(images)
+                    images_shown_in_group = 0
+                    display_image(fb, images[idx], save=True)
+                    last_display_time = time.time()
+                    last_rotation_time = time.time()
+            elif os.path.exists("next_image.tmp"):
                 os.remove("next_image.tmp")
                 manual_prev = False
                 if images:
@@ -651,7 +669,7 @@ def main():
                 if images:
                     if manual_prev:
                         # User was navigating backwards, now move "back to top" (random image)
-                        idx = random.randint(0, len(images) - 1)
+                        idx = get_random_image_index(images)
                         manual_prev = False
                         images_shown_in_group = 0
                     else:

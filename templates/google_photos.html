@@ -114,14 +114,24 @@
                 albums.forEach(album => {
                     const tr = document.createElement('tr');
                     let statusClass = 'status-idle';
-                    if (album.status.includes('Syncing')) statusClass = 'status-syncing';
-                    if (album.status.includes('Error')) statusClass = 'status-error';
-                    if (album.status.includes('Synced')) statusClass = 'status-success';
+                    const statusText = album.status || 'Idle';
+                    
+                    if (statusText.includes('Syncing')) statusClass = 'status-syncing';
+                    if (statusText.includes('Error')) statusClass = 'status-error';
+                    if (statusText.includes('Synced')) statusClass = 'status-success';
+
+                    let extraInfo = '';
+                    if (album.file_count !== undefined) {
+                        extraInfo = `<br><small style="color: #7f8c8d">${album.file_count} files, ${album.size_mb} MB</small>`;
+                    }
 
                     tr.innerHTML = `
                         <td><strong>${album.id}</strong></td>
                         <td><code>${album.path}</code></td>
-                        <td><span class="status-badge ${statusClass}">${album.status}</span></td>
+                        <td>
+                            <span class="status-badge ${statusClass}">${statusText}</span>
+                            ${extraInfo}
+                        </td>
                         <td>
                             <button class="btn btn-danger" onclick="deleteAlbum('${album.id}')">Delete</button>
                         </td>
