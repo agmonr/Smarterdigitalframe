@@ -13,24 +13,42 @@ Built with a focus on **system integrity** and **smooth aesthetics**, DigitalFra
 
 ### 🖼️ Intelligent Slideshow Engine
 - **Hardware-Optimized Display:** Directly writes to the Linux framebuffer (`/dev/fb0`), bypassing heavy desktop environments for maximum performance and stability.
+- **History-Aware Randomization:** Uses a smart 5-retry mechanism to ensure images shown in the last 24 hours are skipped, providing a fresh experience every day.
 - **Smart Scaling:** Automatically resizes and centers images from multiple local and synced directories using high-quality Lanczos resampling.
 - **Subtle Transitions:** Smooth transition logic with customizable intervals and directory-based filtering.
 
-### 🕒 Anti-Burn-In Clock & Overlay
-- **Harmonic Motion Animation:** To protect your display, the clock moves in a continuous, smooth orbital path using independent sine and cosine functions.
-- **Continuous Velocity:** Mathematical implementation ensures the first derivative of position (velocity) is continuous, preventing jarring jumps.
-- **Flexible Scheduling:** Configure periodic clock overlays (e.g., on the hour) or custom cron-based schedules via the dashboard.
+### 🔄 Intelligent Async Sync & Pipelining
+- **Background Pipelining:** The system asynchronously prepares the next album in your queue while you watch the current one, ensuring zero-wait transitions between groups.
+- **Adaptive Throttling:** Monitors download performance in real-time. If a slow connection is detected, the system implements a dynamic pause (50% of your image interval) to keep background tasks from impacting display performance.
+- **Stable Hash-Based Sync:** Every Google Photo is identified by a unique cryptographic hash. This prevents redundant downloads if you reorder your cloud albums and ensures that once an image is deleted from the frame, it **never** syncs back.
+- **Automatic Video Exclusion:** High-efficiency filtering strictly ignores video files, focusing your SD card storage solely on high-quality photography.
 
-### 🌓 Motion-Activated Surveillance
+### 🛡️ Storage Guardrail & FIFO Eviction
+- **1GB Safety Buffer:** The system constantly monitors the free space on your SD card. If space drops below 1GB, it automatically triggers an eviction process.
+- **Granular FIFO Cleanup:** Unlike other systems that delete entire folders, DigitalFrame surgically removes individual images starting with the **oldest downloaded** first until the safety buffer is restored.
+- **Playback Protection:** The automatic cleanup engine is "playback aware" and will never delete the image currently being displayed on your screen.
+
+### 💾 MicroSD Card & I/O Optimization
+- **Minimal Write Latency:** All transient state files (current image, sync progress, system status) are stored in **RAM (`/dev/shm`)**, eliminating thousands of unnecessary disk writes per day and extending the life of your SD card.
+- **High-Performance SQLite:** The history database is tuned with WAL mode, memory-mapped I/O (`mmap`), and synchronous=OFF for maximum responsiveness on Pi hardware.
+- **Config Caching:** Intelligent memory caching for `config.ini` ensures the disk is only read when settings actually change.
+
+### 🌓 Motion-Activated Surveillance & Power
 - **Vision-Based Detection:** Uses the Raspberry Pi Camera to detect movement with configurable sensitivity and auto-calibration for varying light levels.
 - **Smart Power Management:** Automatically toggles HDMI/LCD power via `vcgencmd` and framebuffer blanking, extending display life and saving energy.
 - **Live Video Feed:** High-efficiency MJPEG streaming provides a real-time "security cam" view accessible from any web browser.
 
+### 📊 Real-Time Monitoring Dashboard
+- **Live Sync Progress:** Monitor your Google Photos sync with granular "15/40" progress indicators.
+- **"Next Up" Visual Preview:** See a thumbnail and details of the next album or image group queuing for display.
+- **Storage Health:** Visual progress bars track your free space against the 1GB safety threshold.
+- **Album Inventory:** View a detailed list of all locally cached albums, including disk size (MB), file counts, and precise sync timestamps.
+- **Next Group Control:** A dedicated "Next Group »" button allows you to instantly skip the current set of images and jump to a new random selection.
+
 ### ☁️ Cloud & Web Integration
-- **Google Photos Sync:** Sophisticated scraper-based synchronization that keeps local albums up-to-date with your shared Google Photos albums.
-- **Web-Based Dashboard:** A fully responsive management UI to control schedules, manage folders, view recent history, and toggle system states.
-- **System Terminal:** Integrated web-based terminal for remote administration and command execution (e.g., network testing with `nc`). This feature is inspired by and based on robust PTY handling techniques found in GPLv3-licensed projects like **Butterfly**, providing a full-color, interactive shell experience.
-- **Remote Control:** API-driven "Next" and "Previous" image navigation from any device on your network.
+- **Strict Album Management:** Powerful management UI with strict naming validation (English alphanumeric) and automatic folder auto-selection for new albums.
+- **System Terminal:** Integrated web-based terminal for remote administration and command execution. This feature is inspired by and based on robust PTY handling techniques found in GPLv3-licensed projects like **Butterfly**, providing a full-color, interactive shell experience.
+- **Remote Control:** API-driven navigation from any device on your network.
 
 ---
 
