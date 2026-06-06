@@ -121,7 +121,7 @@
                     if (statusText.includes('Synced')) statusClass = 'status-success';
 
                     let extraInfo = '';
-                    if (album.file_count !== undefined) {
+                    if (album.file_count !== undefined && album.file_count !== null) {
                         extraInfo = `<br><small style="color: #7f8c8d">${album.file_count} files, ${album.size_mb} MB</small>`;
                     }
 

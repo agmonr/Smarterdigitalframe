@@ -776,6 +776,10 @@ def system_status_page():
 def get_albums_api():
     albums = downloader.get_albums()
     status_data = downloader.get_album_status()
+    
+    config = get_config()
+    image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+
     for album in albums:
         stat = status_data.get(album['id'], "Idle")
         if isinstance(stat, dict):
@@ -785,6 +789,24 @@ def get_albums_api():
             album['size_mb'] = stat.get('size_mb')
         else:
             album['status'] = stat
+            album['file_count'] = None
+            album['size_mb'] = None
+
+        # If stats are missing, try to calculate them on the fly
+        if album['file_count'] is None:
+            album_path = os.path.join(image_dir, album['path'])
+            if os.path.exists(album_path):
+                try:
+                    files = [f for f in os.listdir(album_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                    album['file_count'] = len(files)
+                    album['size_mb'] = round(sum(os.path.getsize(os.path.join(album_path, f)) for f in files) / (2**20), 2)
+                except:
+                    album['file_count'] = 0
+                    album['size_mb'] = 0
+            else:
+                album['file_count'] = 0
+                album['size_mb'] = 0
+                
     return jsonify(albums)
 
 @app.route('/api/albums/sync', methods=['POST'])
