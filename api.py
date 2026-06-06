@@ -685,7 +685,7 @@ import shutil
 
 @app.route('/api/sync/status', methods=['GET'])
 def get_sync_status():
-    sync_status_path = os.path.join(PROJECT_ROOT, "sync_status.json")
+    sync_status_path = common.SYNC_STATUS_FILE
     if os.path.exists(sync_status_path):
         try:
             with open(sync_status_path, 'r') as f:
@@ -834,9 +834,53 @@ def add_album_api():
 @app.route('/api/albums/<album_id>', methods=['DELETE'])
 def delete_album_api(album_id):
     albums = downloader.get_albums()
+    album_to_delete = next((a for a in albums if a['id'] == album_id), None)
+    
+    if album_to_delete:
+        # 1. Physically delete the images from the filesystem
+        config = get_config()
+        image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+        full_path = os.path.join(image_dir, album_to_delete['path'])
+        
+        if os.path.exists(full_path):
+            try:
+                shutil.rmtree(full_path)
+                # Also try to remove the parent 'google_photos' if it's empty
+                parent = os.path.dirname(full_path)
+                if os.path.exists(parent) and not os.listdir(parent):
+                    os.rmdir(parent)
+            except Exception as e:
+                logger.error(f"Error deleting album files for {album_id}: {e}")
+
+    # 2. Remove from albums.json
     new_albums = [a for a in albums if a['id'] != album_id]
     with open(downloader.ALBUMS_FILE, 'w') as f:
         json.dump(new_albums, f)
+    
+    # Remove from selected_folders if present
+    if album_to_delete:
+        config = get_config()
+        selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+        if selected != 'all':
+            path = album_to_delete['path']
+            current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+            if path in current_selected:
+                current_selected.remove(path)
+                # If no folders left, default to 'all' or keep it empty as per project convention.
+                # Project seems to use 'all' as fallback.
+                new_value = ",".join(current_selected) if current_selected else 'all'
+                config.set('DEFAULT', 'selected_folders', new_value)
+                with open(CONFIG_FILE, 'w') as f:
+                    config.write(f)
+                restart_frame()
+        
+    # 3. Clean up status
+    status = downloader.get_album_status()
+    if album_id in status:
+        del status[album_id]
+        with open(downloader.STATUS_FILE, 'w') as f:
+            json.dump(status, f)
+
     return jsonify({"status": "success"})
 
 if __name__ == '__main__':

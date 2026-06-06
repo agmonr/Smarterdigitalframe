@@ -12,7 +12,8 @@ from datetime import datetime
 # Setup Logging using common library
 logger = common.setup_logger(__name__)
 
-STATUS_FILE = os.path.join(common.PROJECT_ROOT, "album_status.json")
+STATUS_FILE = common.ALBUM_STATUS_FILE
+SYNC_STATUS_FILE = common.SYNC_STATUS_FILE
 ALBUMS_FILE = os.path.join(common.PROJECT_ROOT, "albums.json")
 STORAGE_GUARDRAIL_GB = 1.0
 
@@ -56,7 +57,7 @@ def update_global_status(operation, message=""):
         "free_space_gb": get_free_space_gb()
     }
     try:
-        with open(os.path.join(common.PROJECT_ROOT, "sync_status.json"), 'w') as f:
+        with open(SYNC_STATUS_FILE, 'w') as f:
             json.dump(global_status, f)
     except Exception as e:
         logger.error(f"Error updating global status: {e}")
@@ -160,10 +161,21 @@ def download_album(album_id, url, output_dir):
         json_urls = re.findall(r'\"(https://lh3\.googleusercontent\.com/[^\"]+)\"', response.text)
         found_urls.update(json_urls)
         
+        # Filter: 
+        # 1. Must be long enough to be a real photo ID
+        # 2. Must not be a known UI element
+        # 3. Must NOT be a video (Google Photos video URLs often contain video markers)
         unique_images = []
+        video_markers = ['/video', '.mp4', '.mov', '.avi', '.mkv']
         for img in found_urls:
             if len(img.split('/')[-1]) < 60: continue
             if 'googleusercontent.com' not in img: continue
+            
+            # Exclude known video markers in the URL
+            is_video = any(marker in img.lower() for marker in video_markers)
+            if is_video:
+                continue
+                
             if img not in unique_images:
                 unique_images.append(img)
                 

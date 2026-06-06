@@ -9,7 +9,19 @@ import sqlite3
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(PROJECT_ROOT, 'config.ini')
 CONFIG_EXAMPLE = os.path.join(PROJECT_ROOT, 'config.ini.example')
-STATE_FILE = os.path.join(PROJECT_ROOT, 'state.json')
+
+# Use /dev/shm (RAM) for transient state files to minimize SD card writes
+SHM_ROOT = '/dev/shm/smarterdigitalframe'
+if not os.path.exists(SHM_ROOT) and os.path.exists('/dev/shm'):
+    try: os.makedirs(SHM_ROOT, exist_ok=True)
+    except: SHM_ROOT = PROJECT_ROOT # Fallback to disk if SHM is not writable
+else:
+    if not os.path.exists('/dev/shm'): SHM_ROOT = PROJECT_ROOT
+
+STATE_FILE = os.path.join(SHM_ROOT, 'state.json')
+SYNC_STATUS_FILE = os.path.join(SHM_ROOT, 'sync_status.json')
+ALBUM_STATUS_FILE = os.path.join(SHM_ROOT, 'album_status.json')
+
 HISTORY_FILE = os.path.join(PROJECT_ROOT, 'history.json')
 DB_FILE = os.path.join(PROJECT_ROOT, 'history.db')
 REMOVE_DIR = os.path.join(PROJECT_ROOT, 'removed/')
@@ -21,14 +33,19 @@ if not os.path.exists(LOG_DIR):
 if not os.path.exists(REMOVE_DIR):
     os.makedirs(REMOVE_DIR)
 
+# Cache for config to minimize reads
+_config_cache = None
+_config_mtime = 0
+
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
-    # Optimizations for SSD/SD Cards
+    # Optimizations for SD Cards: Minimize writes and use RAM for temporary data
     conn.execute('PRAGMA journal_mode = WAL')
-    conn.execute('PRAGMA synchronous = NORMAL')
-    conn.execute('PRAGMA cache_size = -2000') # ~2MB cache
+    conn.execute('PRAGMA synchronous = OFF') # Maximum performance, slight risk on power loss
+    conn.execute('PRAGMA cache_size = -5000') # ~5MB cache
     conn.execute('PRAGMA temp_store = MEMORY')
+    conn.execute('PRAGMA mmap_size = 30000000') # Use memory mapping for faster reads
     return conn
 
 def init_db():
@@ -152,6 +169,16 @@ def get_recent_paths(days=1):
         return set()
 
 def get_config():
+    global _config_cache, _config_mtime
+    
+    # Check if config file was modified since last load
+    current_mtime = 0
+    if os.path.exists(CONFIG_FILE):
+        current_mtime = os.path.getmtime(CONFIG_FILE)
+    
+    if _config_cache is not None and current_mtime <= _config_mtime:
+        return _config_cache
+
     config = configparser.ConfigParser(interpolation=None)
     # Load defaults from example file first
     if os.path.exists(CONFIG_EXAMPLE):
@@ -159,6 +186,9 @@ def get_config():
     # Overlay with actual config
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
+    
+    _config_cache = config
+    _config_mtime = current_mtime
     return config
 
 def setup_logger(name, filename='digitalframe.log', level=None):

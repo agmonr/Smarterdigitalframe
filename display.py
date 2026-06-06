@@ -128,7 +128,7 @@ def update_state(type="image", img_path=None):
         state = state_data.copy()
         state["last_update"] = datetime.now().isoformat()
         
-        fd, temp_path = tempfile.mkstemp(dir=".", prefix="state_tmp_")
+        fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(STATE_FILE), prefix="state_tmp_")
         with os.fdopen(fd, 'w') as f:
             json.dump(state, f)
         os.replace(temp_path, STATE_FILE)
