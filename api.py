@@ -917,7 +917,39 @@ def delete_album_api(album_id):
 
     return jsonify({"status": "success"})
 
+def sync_album_selection_on_startup():
+    """Ensure all Google Photos albums from albums.json are in the selected_folders config."""
+    try:
+        albums = downloader.get_albums()
+        if not albums:
+            return
+            
+        config = get_config()
+        selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+        
+        # If set to 'all', they are already included
+        if selected == 'all':
+            return
+            
+        current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+        changed = False
+        
+        for album in albums:
+            path = album['path']
+            if path not in current_selected:
+                current_selected.append(path)
+                changed = True
+        
+        if changed:
+            config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
+            with open(CONFIG_FILE, 'w') as f:
+                config.write(f)
+            logger.info("Startup: Synchronized Google Photos albums with folder selection.")
+    except Exception as e:
+        logger.error(f"Error during startup album sync: {e}")
+
 if __name__ == '__main__':
+    sync_album_selection_on_startup()
     threading.Thread(target=motion_detection_thread, daemon=True).start()
     threading.Thread(target=camera_scheduler_thread, daemon=True).start()
     threading.Thread(target=google_photos_sync_thread, daemon=True).start()
