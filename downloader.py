@@ -219,11 +219,13 @@ def download_album(album_id, url, output_dir, force_fast=False):
         saved_speed = get_persisted_speed()
         target_speed_mbps = saved_speed
         chunk_size = 128 * 1024 # 128KB chunks are efficient for SD controllers
+        current_actual_speed_mbps = 0.0
         
         for i, img_url in enumerate(unique_images):
-            progress_msg = f"Album: {album_id} ({i+1}/{total_images})"
+            speed_info = f" ({current_actual_speed_mbps:.1f} MB/s)" if current_actual_speed_mbps > 0 else ""
+            progress_msg = f"Album: {album_id} ({i+1}/{total_images}){speed_info}"
             update_global_status("Syncing", f"Downloading {progress_msg}")
-            update_album_status(album_id, f"Syncing ({i+1}/{total_images})")
+            update_album_status(album_id, f"Syncing ({i+1}/{total_images}){speed_info}")
             
             filename = get_image_filename(img_url)
             verified_filenames.add(filename)
@@ -247,6 +249,8 @@ def download_album(album_id, url, output_dir, force_fast=False):
                     if img_res.status_code == 200:
                         content_type = img_res.headers.get('Content-Type', '')
                         if 'image' in content_type:
+                            image_start_time = time.time()
+                            bytes_downloaded = 0
                             with open(file_path, 'wb') as f:
                                 for chunk in img_res.iter_content(chunk_size=chunk_size):
                                     if chunk:
@@ -257,12 +261,15 @@ def download_album(album_id, url, output_dir, force_fast=False):
                                         f.flush() # Prevent massive RAM spikes to SD card
                                         
                                         elapsed_time = time.time() - start_time
+                                        bytes_downloaded += len(chunk)
                                         
+                                        # Calculate actual speed for this chunk
+                                        chunk_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
+                                        current_actual_speed_mbps = chunk_speed / (1024 * 1024)
+
                                         if not force_fast:
-                                            actual_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
-                                            
                                             # Adaptive Throttling: If network slows below 95% of target, drop limit by 25%
-                                            if actual_speed < (target_speed_bytes * 0.95):
+                                            if chunk_speed < (target_speed_bytes * 0.95):
                                                 new_speed = target_speed_mbps * 0.75
                                                 if save_persisted_speed(new_speed, saved_speed):
                                                     logger.info(f"⚡ Speed cap adjusted: {new_speed:.2f} MB/s")
