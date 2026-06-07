@@ -17,6 +17,31 @@ SYNC_STATUS_FILE = common.SYNC_STATUS_FILE
 ALBUMS_FILE = os.path.join(common.PROJECT_ROOT, "albums.json")
 STORAGE_GUARDRAIL_GB = 1.0
 
+# RAM-based path for persisted speed limit
+SPEED_CONFIG_FILE = os.path.join(common.SHM_ROOT, "download_speed.json")
+
+def get_persisted_speed(default_speed=6.0):
+    """Reads the saved speed limit from the RAM-based config file."""
+    if os.path.exists(SPEED_CONFIG_FILE):
+        try:
+            with open(SPEED_CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get("current_speed_mbps", default_speed)
+        except:
+            pass
+    return default_speed
+
+def save_persisted_speed(new_speed, current_saved_speed):
+    """Compares speeds in RAM first. Only writes if the speed has actually changed."""
+    if abs(new_speed - current_saved_speed) > 0.01:
+        try:
+            with open(SPEED_CONFIG_FILE, 'w') as f:
+                json.dump({"current_speed_mbps": new_speed}, f)
+            return True
+        except:
+            pass
+    return False
+
 def get_image_filename(url):
     """Use MD5 of the base URL to get a stable, unique filename."""
     base_url = url.split('=')[0]
@@ -190,6 +215,11 @@ def download_album(album_id, url, output_dir):
         verified_filenames = set()
         total_images = len(unique_images)
         
+        # Load persisted speed from RAM
+        saved_speed = get_persisted_speed()
+        target_speed_mbps = saved_speed
+        chunk_size = 128 * 1024 # 128KB chunks are efficient for SD controllers
+        
         for i, img_url in enumerate(unique_images):
             progress_msg = f"Album: {album_id} ({i+1}/{total_images})"
             update_global_status("Syncing", f"Downloading {progress_msg}")
@@ -212,25 +242,37 @@ def download_album(album_id, url, output_dir):
             if not os.path.exists(file_path):
                 base_url = img_url.split('=')[0]
                 full_img_url = base_url + "=w3000"
-                start_time = time.time()
                 try:
-                    img_res = requests.get(full_img_url, headers=headers, timeout=15)
-                    download_time = time.time() - start_time
-                    
+                    img_res = requests.get(full_img_url, headers=headers, timeout=15, stream=True)
                     if img_res.status_code == 200:
                         content_type = img_res.headers.get('Content-Type', '')
                         if 'image' in content_type:
                             with open(file_path, 'wb') as f:
-                                f.write(img_res.content)
+                                for chunk in img_res.iter_content(chunk_size=chunk_size):
+                                    if chunk:
+                                        target_speed_bytes = target_speed_mbps * 1024 * 1024
+                                        start_time = time.time()
+                                        
+                                        f.write(chunk)
+                                        f.flush() # Prevent massive RAM spikes to SD card
+                                        
+                                        elapsed_time = time.time() - start_time
+                                        actual_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
+                                        
+                                        # Adaptive Throttling: If network slows below 95% of target, drop limit by 25%
+                                        if actual_speed < (target_speed_bytes * 0.95):
+                                            new_speed = target_speed_mbps * 0.75
+                                            if save_persisted_speed(new_speed, saved_speed):
+                                                logger.info(f"⚡ Speed cap adjusted: {new_speed:.2f} MB/s")
+                                                saved_speed = new_speed
+                                            target_speed_mbps = new_speed
+                                            # No sleep, already lagging
+                                        else:
+                                            # Enforce speed limit cap
+                                            expected_time = len(chunk) / target_speed_bytes
+                                            if elapsed_time < expected_time:
+                                                time.sleep(expected_time - elapsed_time)
                             new_count += 1
-                            
-                            # Adaptive Throttling: If download is slow (> 2s for example, or relative to interval)
-                            # Or if it's "lagging" the system. Let's use 2s as a baseline for "slow".
-                            if download_time > 2.0:
-                                logger.info(f"Slow download detected ({download_time:.2f}s). Throttling for {throttle_pause}s")
-                                update_global_status("Waiting due to slow download", f"Throttling for {throttle_pause}s after slow image download ({i+1}/{total_images})")
-                                time.sleep(throttle_pause)
-                                update_global_status("Syncing", f"Downloading {progress_msg}")
                         else:
                             logger.warning(f"URL {base_url} did not return an image")
                     else:
