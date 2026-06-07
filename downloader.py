@@ -151,7 +151,7 @@ def get_albums():
             return []
     return []
 
-def download_album(album_id, url, output_dir):
+def download_album(album_id, url, output_dir, force_fast=False):
     check_storage_guardrail()
     update_album_status(album_id, "Syncing...")
     update_global_status("Syncing", f"Downloading album: {album_id}")
@@ -257,21 +257,23 @@ def download_album(album_id, url, output_dir):
                                         f.flush() # Prevent massive RAM spikes to SD card
                                         
                                         elapsed_time = time.time() - start_time
-                                        actual_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
                                         
-                                        # Adaptive Throttling: If network slows below 95% of target, drop limit by 25%
-                                        if actual_speed < (target_speed_bytes * 0.95):
-                                            new_speed = target_speed_mbps * 0.75
-                                            if save_persisted_speed(new_speed, saved_speed):
-                                                logger.info(f"⚡ Speed cap adjusted: {new_speed:.2f} MB/s")
-                                                saved_speed = new_speed
-                                            target_speed_mbps = new_speed
-                                            # No sleep, already lagging
-                                        else:
-                                            # Enforce speed limit cap
-                                            expected_time = len(chunk) / target_speed_bytes
-                                            if elapsed_time < expected_time:
-                                                time.sleep(expected_time - elapsed_time)
+                                        if not force_fast:
+                                            actual_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
+                                            
+                                            # Adaptive Throttling: If network slows below 95% of target, drop limit by 25%
+                                            if actual_speed < (target_speed_bytes * 0.95):
+                                                new_speed = target_speed_mbps * 0.75
+                                                if save_persisted_speed(new_speed, saved_speed):
+                                                    logger.info(f"⚡ Speed cap adjusted: {new_speed:.2f} MB/s")
+                                                    saved_speed = new_speed
+                                                target_speed_mbps = new_speed
+                                                # No sleep, already lagging
+                                            else:
+                                                # Enforce speed limit cap
+                                                expected_time = len(chunk) / target_speed_bytes
+                                                if elapsed_time < expected_time:
+                                                    time.sleep(expected_time - elapsed_time)
                             new_count += 1
                         else:
                             logger.warning(f"URL {base_url} did not return an image")
@@ -307,11 +309,11 @@ def download_album(album_id, url, output_dir):
         update_album_status(album_id, f"Error: {str(e)}")
         return False
 
-def sync_all():
+def sync_all(force_fast=False):
     update_global_status("Idle", "Checking for updates...")
     albums = get_albums()
     for album in albums:
-        download_album(album['id'], album['url'], album['path'])
+        download_album(album['id'], album['url'], album['path'], force_fast=force_fast)
     update_global_status("Idle", "Sync complete.")
 
 if __name__ == "__main__":

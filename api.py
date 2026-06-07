@@ -812,7 +812,7 @@ def get_albums_api():
 
 @app.route('/api/albums/sync', methods=['POST'])
 def trigger_sync_api():
-    threading.Thread(target=downloader.sync_all, daemon=True).start()
+    threading.Thread(target=downloader.sync_all, args=(True,), daemon=True).start()
     return jsonify({"status": "success", "message": "Global sync initiated"})
 
 @app.route('/api/albums', methods=['POST'])
