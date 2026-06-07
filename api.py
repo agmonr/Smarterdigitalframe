@@ -828,28 +828,39 @@ def add_album_api():
     if not re.match(r'^[a-zA-Z0-9._-]+$', album_id):
         return jsonify({"error": "Album ID must only contain English letters, numbers, dots, underscores, or hyphens (no spaces or special characters)"}), 400
 
+    # Validate URL
+    try:
+        response = requests.head(url, timeout=10, allow_redirects=True)
+        if response.status_code >= 400:
+            return jsonify({"error": f"URL unreachable: Received HTTP {response.status_code}. Please ensure the album is shared publicly."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to validate URL: {str(e)}"}), 400
+
     safe_id = album_id.strip()
     path = os.path.join('google_photos', safe_id)
     albums = downloader.get_albums()
     for album in albums:
         if album['id'] == album_id:
-            return jsonify({"error": "Album with this ID already exists"}), 400
-            
-    albums.append({"id": album_id, "url": url, "path": path})
-    with open(downloader.ALBUMS_FILE, 'w') as f:
-        json.dump(albums, f)
+            return jsonify({"error": f"Album with ID '{album_id}' already exists."}), 400
     
-    # Auto-add to selected_folders if not 'all'
-    config = get_config()
-    selected = config.get('DEFAULT', 'selected_folders', fallback='all')
-    if selected != 'all':
-        current_selected = [s.strip() for s in selected.split(',') if s.strip()]
-        if path not in current_selected:
-            current_selected.append(path)
-            config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
-            with open(CONFIG_FILE, 'w') as f:
-                config.write(f)
-            restart_frame() # Restart to apply folder change
+    try:
+        albums.append({"id": album_id, "url": url, "path": path})
+        with open(downloader.ALBUMS_FILE, 'w') as f:
+            json.dump(albums, f)
+        
+        # Auto-add to selected_folders if not 'all'
+        config = get_config()
+        selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+        if selected != 'all':
+            current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+            if path not in current_selected:
+                current_selected.append(path)
+                config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
+                with open(CONFIG_FILE, 'w') as f:
+                    config.write(f)
+                restart_frame() # Restart to apply folder change
+    except Exception as e:
+        return jsonify({"error": f"Failed to save album configuration: {str(e)}"}), 500
         
     return jsonify({"status": "success"})
 
