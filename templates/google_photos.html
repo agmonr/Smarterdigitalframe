@@ -126,7 +126,9 @@
                     }
 
                     tr.innerHTML = `
-                        <td><strong>${album.id}</strong></td>
+                        <td>
+                            <strong><a href="${album.url}" target="_blank" style="text-decoration: none; color: inherit;">${album.id}</a></strong>
+                        </td>
                         <td><code>${album.path}</code></td>
                         <td>
                             <span class="status-badge ${statusClass}">${statusText}</span>
