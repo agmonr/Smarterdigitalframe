@@ -62,6 +62,7 @@
             <table class="album-list">
                 <thead>
                     <tr>
+                        <th>Display</th>
                         <th>Name / ID</th>
                         <th>Local Path</th>
                         <th>Status</th>
@@ -104,8 +105,23 @@
             }
         }
 
+        let selectedFolders = [];
+        let isAllSelected = false;
+
         async function loadAlbums() {
             try {
+                // Fetch current folder selection first
+                const folderRes = await fetch(`${API_BASE}/folders`);
+                const folderData = await folderRes.json();
+                
+                if (folderData.selected_folders === 'all') {
+                    isAllSelected = true;
+                    selectedFolders = folderData.available_folders || [];
+                } else {
+                    isAllSelected = false;
+                    selectedFolders = folderData.selected_folders.split(',').map(s => s.trim()).filter(s => s);
+                }
+
                 const response = await fetch(`${API_BASE}/albums`);
                 const albums = await response.json();
                 const tbody = document.getElementById('album-table-body');
@@ -125,7 +141,14 @@
                         extraInfo = `<br><small style="color: #7f8c8d">${album.file_count} files, ${album.size_mb} MB</small>`;
                     }
 
+                    const isChecked = isAllSelected || selectedFolders.includes(album.path);
+
                     tr.innerHTML = `
+                        <td>
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} 
+                                   onchange="toggleAlbumSelection('${album.path}', this.checked)"
+                                   style="width: 20px; height: 20px; cursor: pointer;">
+                        </td>
                         <td>
                             <strong><a href="${album.url}" target="_blank" style="text-decoration: none; color: inherit;">${album.id}</a></strong>
                         </td>
@@ -142,6 +165,49 @@
                 });
             } catch (e) {
                 console.error("Error loading albums", e);
+            }
+        }
+
+        async function toggleAlbumSelection(path, isChecked) {
+            try {
+                // Fetch latest state to be sure
+                const folderRes = await fetch(`${API_BASE}/folders`);
+                const folderData = await folderRes.json();
+                const available = folderData.available_folders;
+                let current = [];
+                
+                if (folderData.selected_folders === 'all') {
+                    current = [...available];
+                } else {
+                    current = folderData.selected_folders.split(',').map(s => s.trim()).filter(s => s);
+                }
+
+                if (isChecked) {
+                    if (!current.includes(path)) current.push(path);
+                } else {
+                    current = current.filter(f => f !== path);
+                }
+
+                // Decide if we should send 'all' or the list
+                // If everything is selected, or if nothing is selected (default to all), send 'all'
+                let value = 'all';
+                if (current.length > 0 && current.length < available.length) {
+                    value = current.join(',');
+                } else if (current.length === 0) {
+                    value = 'all'; // Default if none selected
+                }
+
+                // Save the new selection
+                await fetch(`${API_BASE}/folders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selected: value })
+                });
+                
+                // Reload to refresh the 'isAllSelected' state logic
+                loadAlbums();
+            } catch (e) {
+                alert("Error updating selection: " + e.message);
             }
         }
 
