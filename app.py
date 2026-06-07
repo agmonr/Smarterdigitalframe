@@ -7,8 +7,7 @@ import common
 app = Flask(__name__)
 
 # Load configuration
-config = common.get_config()
-IMAGE_DIR = config.get('DEFAULT', 'imagedir', fallback=os.path.join(common.PROJECT_ROOT, 'images/'))
+IMAGE_DIR = common.get_image_dir()
 
 def get_images():
     return common.get_images(IMAGE_DIR)

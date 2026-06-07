@@ -83,7 +83,7 @@ def check_storage_guardrail():
 
     # Collect all images with their mtime
     all_images = []
-    image_dir = os.path.join(common.PROJECT_ROOT, "images")
+    image_dir = common.get_image_dir()
     if not os.path.exists(image_dir):
         return
 
@@ -134,7 +134,7 @@ def download_album(album_id, url, output_dir):
     logger.debug(f"Starting sync for album: {album_id} ({url})")
     try:
         if not os.path.isabs(output_dir):
-            base_dir = os.path.join(common.PROJECT_ROOT, "images")
+            base_dir = common.get_image_dir()
             output_dir = os.path.join(base_dir, output_dir)
             
         os.makedirs(output_dir, exist_ok=True)
@@ -199,8 +199,8 @@ def download_album(album_id, url, output_dir):
             verified_filenames.add(filename)
             file_path = os.path.join(output_dir, filename)
             
-            # Use relative path from 'images' to check against 'removed'
-            images_base = os.path.join(common.PROJECT_ROOT, "images")
+            # Use relative path from image_dir to check against 'removed'
+            images_base = common.get_image_dir()
             rel_path = os.path.relpath(file_path, images_base)
             removed_path = os.path.join(common.PROJECT_ROOT, "removed", rel_path)
             

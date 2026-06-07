@@ -30,7 +30,7 @@ def load_config_values():
     config = common.get_config()
     PROJECT_ROOT = common.PROJECT_ROOT
     
-    IMAGE_DIR = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+    IMAGE_DIR = common.get_image_dir()
     SELECTED_FOLDERS = config.get('DEFAULT', 'selected_folders', fallback='all')
     WEAK_MACHINE = config.getboolean('DEFAULT', 'weak_machine', fallback=False)
     INTERVAL = config.getint('DEFAULT', 'interval', fallback=10)

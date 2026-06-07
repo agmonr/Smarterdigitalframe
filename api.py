@@ -1,6 +1,7 @@
 import logging; logging.basicConfig(level=logging.INFO, force=True); logging.getLogger("werkzeug").setLevel(logging.INFO)
 import os
 import json
+import re
 import configparser
 import subprocess
 import signal
@@ -9,6 +10,7 @@ import cv2
 import io
 import threading
 import time
+import requests
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory, render_template, Response
 from flask_cors import CORS
@@ -325,7 +327,7 @@ def remove_image():
         return jsonify({"error": "No filename or path provided"}), 400
     
     config = get_config()
-    image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+    image_dir = common.get_image_dir()
     remove_dir = config.get('DEFAULT', 'removedir', fallback=REMOVE_DIR)
     
     src = None
@@ -387,7 +389,7 @@ def remove_image():
 @app.route('/api/folders', methods=['GET'])
 def get_folders():
     config = get_config()
-    image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+    image_dir = common.get_image_dir()
     selected = config.get('DEFAULT', 'selected_folders', fallback='all')
     
     folders = []
@@ -415,8 +417,7 @@ def save_folders():
     
     with open(CONFIG_FILE, 'w') as f:
         config.write(f)
-        
-    restart_frame()
+    restart_display_service()
     return jsonify({"status": "success"})
 
 @app.route('/api/show', methods=['POST'])
@@ -432,7 +433,7 @@ def show_image():
             
         # Search for filename in IMAGE_DIR
         config = get_config()
-        image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+        image_dir = common.get_image_dir()
         
         found_path = None
         for root, dirs, files in os.walk(image_dir):
@@ -475,7 +476,7 @@ def update_config():
 
     with open(CONFIG_FILE, 'w') as f:
         config.write(f)
-    restart_frame() # Restart to apply config
+    restart_display_service() # Restart to apply config
     return jsonify({"status": "success", "message": "Configuration updated"})
 
 def _restart_frame_process():
@@ -514,7 +515,7 @@ def fullscreen_view():
 @app.route('/api/image/<path:filename>')
 def serve_image(filename):
     config = get_config()
-    image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+    image_dir = common.get_image_dir()
     remove_dir = config.get('DEFAULT', 'removedir', fallback=REMOVE_DIR)
     
     # Try direct path first (if it's a relative path from imagedir)
@@ -778,7 +779,7 @@ def get_albums_api():
     status_data = downloader.get_album_status()
     
     config = get_config()
-    image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+    image_dir = common.get_image_dir()
 
     for album in albums:
         stat = status_data.get(album['id'], "Idle")
@@ -817,31 +818,31 @@ def trigger_sync_api():
 @app.route('/api/albums', methods=['POST'])
 def add_album_api():
     data = request.json
-    album_id = data.get('id')
-    url = data.get('url')
+    album_id = data.get('id', '').strip()
+    url = data.get('url', '').strip()
     
-    if not all([album_id, url]):
-        return jsonify({"error": "Missing id or url"}), 400
+    if not album_id or not url:
+        return jsonify({"error": "Both Album Name (ID) and URL are required."}), 400
         
     # Strictly allow only English alphanumeric characters, dots, underscores, and hyphens.
     # No spaces, no non-English characters.
     if not re.match(r'^[a-zA-Z0-9._-]+$', album_id):
-        return jsonify({"error": "Album ID must only contain English letters, numbers, dots, underscores, or hyphens (no spaces or special characters)"}), 400
+        return jsonify({"error": f"Invalid Album ID '{album_id}'. It must only contain English letters, numbers, dots, underscores, or hyphens (no spaces or special characters)."}), 400
 
     # Validate URL
     try:
-        response = requests.head(url, timeout=10, allow_redirects=True)
+        # Use GET instead of HEAD for some shorteners that might block HEAD
+        response = requests.get(url, timeout=10, allow_redirects=True, stream=True)
         if response.status_code >= 400:
-            return jsonify({"error": f"URL unreachable: Received HTTP {response.status_code}. Please ensure the album is shared publicly."}), 400
+            return jsonify({"error": f"URL unreachable: Received HTTP {response.status_code}. Please ensure the album is shared publicly and the link is correct."}), 400
     except Exception as e:
         return jsonify({"error": f"Failed to validate URL: {str(e)}"}), 400
 
-    safe_id = album_id.strip()
-    path = os.path.join('google_photos', safe_id)
+    path = os.path.join('google_photos', album_id)
     albums = downloader.get_albums()
     for album in albums:
         if album['id'] == album_id:
-            return jsonify({"error": f"Album with ID '{album_id}' already exists."}), 400
+            return jsonify({"error": f"An album with ID '{album_id}' already exists."}), 400
     
     try:
         albums.append({"id": album_id, "url": url, "path": path})
@@ -858,9 +859,9 @@ def add_album_api():
                 config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
                 with open(CONFIG_FILE, 'w') as f:
                     config.write(f)
-                restart_frame() # Restart to apply folder change
+                restart_display_service() # Restart to apply folder change
     except Exception as e:
-        return jsonify({"error": f"Failed to save album configuration: {str(e)}"}), 500
+        return jsonify({"error": f"Internal system error while saving configuration: {str(e)}"}), 500
         
     return jsonify({"status": "success"})
 
@@ -872,7 +873,7 @@ def delete_album_api(album_id):
     if album_to_delete:
         # 1. Physically delete the images from the filesystem
         config = get_config()
-        image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+        image_dir = common.get_image_dir()
         full_path = os.path.join(image_dir, album_to_delete['path'])
         
         if os.path.exists(full_path):
@@ -905,7 +906,7 @@ def delete_album_api(album_id):
                 config.set('DEFAULT', 'selected_folders', new_value)
                 with open(CONFIG_FILE, 'w') as f:
                     config.write(f)
-                restart_frame()
+                restart_display_service()
         
     # 3. Clean up status
     status = downloader.get_album_status()

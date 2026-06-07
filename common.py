@@ -294,10 +294,13 @@ def save_state(state):
     except Exception as e:
         print(f"Error saving state: {e}")
 
+def get_image_dir():
+    config = get_config()
+    return config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+
 def get_images(image_dir=None):
     if image_dir is None:
-        config = get_config()
-        image_dir = config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
+        image_dir = get_image_dir()
     
     valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
     if not os.path.exists(image_dir):
