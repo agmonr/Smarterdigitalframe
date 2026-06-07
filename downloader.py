@@ -252,22 +252,25 @@ def download_album(album_id, url, output_dir, force_fast=False):
                             image_start_time = time.time()
                             bytes_downloaded = 0
                             with open(file_path, 'wb') as f:
+                                # Start timing BEFORE the loop to catch the first chunk's download time
+                                chunk_start_time = time.time()
                                 for chunk in img_res.iter_content(chunk_size=chunk_size):
                                     if chunk:
-                                        target_speed_bytes = target_speed_mbps * 1024 * 1024
-                                        start_time = time.time()
+                                        # Time elapsed since we started waiting for THIS chunk
+                                        chunk_elapsed = time.time() - chunk_start_time
                                         
                                         f.write(chunk)
                                         f.flush() # Prevent massive RAM spikes to SD card
                                         
-                                        elapsed_time = time.time() - start_time
                                         bytes_downloaded += len(chunk)
                                         
-                                        # Calculate actual speed for this chunk
-                                        chunk_speed = len(chunk) / elapsed_time if elapsed_time > 0 else target_speed_bytes
+                                        # Calculate actual speed for this chunk (Bytes / Seconds)
+                                        # Include BOTH download time and write time for a realistic "system throughput"
+                                        chunk_speed = len(chunk) / chunk_elapsed if chunk_elapsed > 0 else (target_speed_mbps * 1024 * 1024)
                                         current_actual_speed_mbps = chunk_speed / (1024 * 1024)
 
                                         if not force_fast:
+                                            target_speed_bytes = target_speed_mbps * 1024 * 1024
                                             # Adaptive Throttling: If network slows below 95% of target, drop limit by 25%
                                             if chunk_speed < (target_speed_bytes * 0.95):
                                                 new_speed = target_speed_mbps * 0.75
@@ -275,12 +278,14 @@ def download_album(album_id, url, output_dir, force_fast=False):
                                                     logger.info(f"⚡ Speed cap adjusted: {new_speed:.2f} MB/s")
                                                     saved_speed = new_speed
                                                 target_speed_mbps = new_speed
-                                                # No sleep, already lagging
                                             else:
                                                 # Enforce speed limit cap
                                                 expected_time = len(chunk) / target_speed_bytes
-                                                if elapsed_time < expected_time:
-                                                    time.sleep(expected_time - elapsed_time)
+                                                if chunk_elapsed < expected_time:
+                                                    time.sleep(expected_time - chunk_elapsed)
+                                        
+                                        # Reset timer for the NEXT chunk's download
+                                        chunk_start_time = time.time()
                             new_count += 1
                         else:
                             logger.warning(f"URL {base_url} did not return an image")
