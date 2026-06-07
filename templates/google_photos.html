@@ -57,12 +57,18 @@
         
         <button class="btn btn-sync" onclick="triggerSync()">Sync All Albums Now</button>
 
+        <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+            <button class="btn" style="background: #2ecc71; padding: 5px 15px;" onclick="toggleAllSlideshow(true)">Select All for Slideshow</button>
+            <button class="btn" style="background: #e74c3c; padding: 5px 15px;" onclick="toggleAllSlideshow(false)">Unselect All for Slideshow</button>
+        </div>
+
         <h2>Configured Albums</h2>
         <div class="table-responsive">
             <table class="album-list">
                 <thead>
                     <tr>
                         <th>Display</th>
+                        <th>In Folders</th>
                         <th>Name / ID</th>
                         <th>Local Path</th>
                         <th>Status</th>
@@ -150,6 +156,11 @@
                                    style="width: 20px; height: 20px; cursor: pointer;">
                         </td>
                         <td>
+                            <input type="checkbox" ${album.in_folder_view !== false ? 'checked' : ''} 
+                                   onchange="toggleInFolderView('${album.id}', this.checked)"
+                                   style="width: 20px; height: 20px; cursor: pointer;">
+                        </td>
+                        <td>
                             <strong><a href="${album.url}" target="_blank" style="text-decoration: none; color: inherit;">${album.id}</a></strong>
                         </td>
                         <td><code>${album.path}</code></td>
@@ -205,6 +216,54 @@
                 });
                 
                 // Reload to refresh the 'isAllSelected' state logic
+                loadAlbums();
+            } catch (e) {
+                alert("Error updating selection: " + e.message);
+            }
+        }
+
+        async function toggleInFolderView(id, isChecked) {
+            try {
+                await fetch(`${API_BASE}/albums/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, settings: { in_folder_view: isChecked } })
+                });
+                loadAlbums();
+            } catch (e) {
+                alert("Error updating visibility: " + e.message);
+            }
+        }
+
+        async function toggleAllSlideshow(checked) {
+            try {
+                const response = await fetch(`${API_BASE}/albums`);
+                const albums = await response.json();
+                const folderRes = await fetch(`${API_BASE}/folders`);
+                const folderData = await folderRes.json();
+                
+                let current = folderData.selected_folders === 'all' ? [...folderData.available_folders] : folderData.selected_folders.split(',').filter(s => s);
+                
+                albums.forEach(album => {
+                    if (checked) {
+                        if (!current.includes(album.path)) current.push(album.path);
+                    } else {
+                        current = current.filter(f => f !== album.path);
+                    }
+                });
+
+                let value = 'all';
+                if (current.length > 0 && current.length < folderData.available_folders.length) {
+                    value = current.join(',');
+                } else if (current.length === 0) {
+                    value = 'all';
+                }
+
+                await fetch(`${API_BASE}/folders`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selected: value })
+                });
                 loadAlbums();
             } catch (e) {
                 alert("Error updating selection: " + e.message);
