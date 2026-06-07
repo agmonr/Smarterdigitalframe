@@ -167,7 +167,7 @@
                     loadAlbums();
                 }
             } catch (e) {
-                alert("Error adding album");
+                alert("Error adding album: " + e.message);
             }
         }
 
@@ -177,7 +177,7 @@
                 await fetch(`${API_BASE}/albums/${id}`, { method: 'DELETE' });
                 loadAlbums();
             } catch (e) {
-                alert("Error deleting album");
+                alert("Error deleting album: " + e.message);
             }
         }
 
@@ -186,7 +186,7 @@
                 await fetch(`${API_BASE}/albums/sync`, { method: 'POST' });
                 setTimeout(loadAlbums, 1000);
             } catch (e) {
-                alert("Error starting sync");
+                alert("Error starting sync: " + e.message);
             }
         }
 
