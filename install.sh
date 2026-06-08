@@ -16,7 +16,7 @@ echo "Installing system dependencies..."
 apt-get update
 apt-get install -y python3-venv python3-pip nginx \
 	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite\
-       	dnsmasq network-manager apt-listchanges cloud-init\ 
+       	dnsmasq network-manager apt-listchanges \ 
 	swig liblgpio-dev libgl1 libglx-mesa0
 
 # 1. Setup Virtual Environment with uv

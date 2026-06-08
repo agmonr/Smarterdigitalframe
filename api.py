@@ -400,7 +400,9 @@ def get_folders():
                 # Calculate the relative path from the image_dir
                 full_path = os.path.join(root, d)
                 rel_path = os.path.relpath(full_path, image_dir)
-                folders.append(rel_path)
+                # Filter out google_photos folders - they are managed separately
+                if not rel_path.startswith('google_photos'):
+                    folders.append(rel_path)
     
     return jsonify({
         "available_folders": sorted(folders),
@@ -413,6 +415,24 @@ def save_folders():
     selected = data.get('selected', 'all')
     
     config = get_config()
+    
+    # If not selecting 'all', we must preserve Google Photos paths
+    # because they are filtered out from the UI and wouldn't be sent back.
+    if selected != 'all':
+        try:
+            albums = downloader.get_albums()
+            current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+            changed = False
+            for album in albums:
+                path = album.get('path')
+                if path and path not in current_selected:
+                    current_selected.append(path)
+                    changed = True
+            if changed:
+                selected = ",".join(current_selected)
+        except Exception as e:
+            logger.error(f"Error preserving Google Photos in save_folders: {e}")
+
     config.set('DEFAULT', 'selected_folders', selected)
     
     with open(CONFIG_FILE, 'w') as f:
@@ -780,6 +800,8 @@ def get_albums_api():
     
     config = get_config()
     image_dir = common.get_image_dir()
+    selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+    selected_list = [s.strip() for s in selected.split(',') if s.strip()] if selected != 'all' else []
 
     for album in albums:
         stat = status_data.get(album['id'], "Idle")
@@ -788,10 +810,12 @@ def get_albums_api():
             album['last_sync'] = stat.get('last_sync')
             album['file_count'] = stat.get('file_count')
             album['size_mb'] = stat.get('size_mb')
+            album['speed_mbps'] = stat.get('speed_mbps')
         else:
             album['status'] = stat
             album['file_count'] = None
             album['size_mb'] = None
+            album['speed_mbps'] = None
 
         # If stats are missing, try to calculate them on the fly
         if album['file_count'] is None:
@@ -807,8 +831,79 @@ def get_albums_api():
             else:
                 album['file_count'] = 0
                 album['size_mb'] = 0
+
+        # Determine enabled state
+        if 'enabled' not in album:
+            if selected == 'all':
+                album['enabled'] = True
+            else:
+                album['enabled'] = album['path'] in selected_list
                 
     return jsonify(albums)
+
+def get_all_subfolders():
+    image_dir = common.get_image_dir()
+    folders = []
+    if os.path.exists(image_dir):
+        for root, dirs, files in os.walk(image_dir):
+            for d in dirs:
+                rel_path = os.path.relpath(os.path.join(root, d), image_dir)
+                folders.append(rel_path)
+    return folders
+
+@app.route('/api/albums/<album_id>/toggle', methods=['POST'])
+def toggle_album_api(album_id):
+    data = request.json
+    enabled = data.get('enabled', True)
+    
+    albums = downloader.get_albums()
+    album_path = None
+    album_found = False
+    for album in albums:
+        if album['id'] == album_id:
+            album['enabled'] = enabled
+            album_path = album['path']
+            album_found = True
+            break
+    
+    if not album_found:
+        return jsonify({"error": "Album not found"}), 404
+
+    with open(downloader.ALBUMS_FILE, 'w') as f:
+        json.dump(albums, f)
+        
+    if album_path:
+        config = get_config()
+        selected = config.get('DEFAULT', 'selected_folders', fallback='all')
+        
+        if enabled:
+            if selected != 'all':
+                current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+                if album_path not in current_selected:
+                    current_selected.append(album_path)
+                    config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
+                    with open(CONFIG_FILE, 'w') as f:
+                        config.write(f)
+                    restart_display_service()
+        else:
+            if selected == 'all':
+                all_folders = get_all_subfolders()
+                current_selected = [f for f in all_folders if f != album_path]
+                config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
+                with open(CONFIG_FILE, 'w') as f:
+                    config.write(f)
+                restart_display_service()
+            else:
+                current_selected = [s.strip() for s in selected.split(',') if s.strip()]
+                if album_path in current_selected:
+                    current_selected.remove(album_path)
+                    new_val = ",".join(current_selected) if current_selected else 'all'
+                    config.set('DEFAULT', 'selected_folders', new_val)
+                    with open(CONFIG_FILE, 'w') as f:
+                        config.write(f)
+                    restart_display_service()
+    
+    return jsonify({"status": "success"})
 
 @app.route('/api/albums/sync', methods=['POST'])
 def trigger_sync_api():
@@ -845,7 +940,7 @@ def add_album_api():
             return jsonify({"error": f"An album with ID '{album_id}' already exists."}), 400
     
     try:
-        albums.append({"id": album_id, "url": url, "path": path})
+        albums.append({"id": album_id, "url": url, "path": path, "enabled": True})
         with open(downloader.ALBUMS_FILE, 'w') as f:
             json.dump(albums, f)
         
@@ -935,6 +1030,9 @@ def sync_album_selection_on_startup():
         changed = False
         
         for album in albums:
+            if not album.get('enabled', True):
+                continue
+                
             path = album['path']
             if path not in current_selected:
                 current_selected.append(path)

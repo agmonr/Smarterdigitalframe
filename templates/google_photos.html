@@ -62,6 +62,7 @@
             <table class="album-list">
                 <thead>
                     <tr>
+                        <th>Display</th>
                         <th>Name / ID</th>
                         <th>Local Path</th>
                         <th>Status</th>
@@ -104,6 +105,23 @@
             }
         }
 
+        async function toggleAlbum(id, enabled) {
+            try {
+                const response = await fetch(`${API_BASE}/albums/${id}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                if (!response.ok) {
+                    alert("Error toggling album status");
+                    loadAlbums(); // Revert checkbox
+                }
+            } catch (e) {
+                alert("Error toggling album status: " + e.message);
+                loadAlbums(); // Revert checkbox
+            }
+        }
+
         async function loadAlbums() {
             try {
                 const response = await fetch(`${API_BASE}/albums`);
@@ -120,6 +138,11 @@
                     if (statusText.includes('Error')) statusClass = 'status-error';
                     if (statusText.includes('Synced')) statusClass = 'status-success';
 
+                    let speedInfo = '';
+                    if (statusText.includes('Syncing') && album.speed_mbps) {
+                        speedInfo = ` <span style="font-size: 11px; opacity: 0.8;">(${album.speed_mbps} MB/s)</span>`;
+                    }
+
                     let extraInfo = '';
                     if (album.file_count !== undefined && album.file_count !== null) {
                         extraInfo = `<br><small style="color: #7f8c8d">${album.file_count} files, ${album.size_mb} MB</small>`;
@@ -127,11 +150,16 @@
 
                     tr.innerHTML = `
                         <td>
+                            <input type="checkbox" ${album.enabled ? 'checked' : ''} 
+                                   onchange="toggleAlbum('${album.id}', this.checked)"
+                                   style="width: 20px; height: 20px; cursor: pointer;">
+                        </td>
+                        <td>
                             <strong><a href="${album.url}" target="_blank" style="text-decoration: none; color: inherit;">${album.id}</a></strong>
                         </td>
                         <td><code>${album.path}</code></td>
                         <td>
-                            <span class="status-badge ${statusClass}">${statusText}</span>
+                            <span class="status-badge ${statusClass}">${statusText}${speedInfo}</span>
                             ${extraInfo}
                         </td>
                         <td>
