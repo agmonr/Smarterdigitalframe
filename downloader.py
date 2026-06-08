@@ -220,6 +220,8 @@ def download_album(album_id, url, output_dir, force_fast=False):
         target_speed_mbps = saved_speed
         chunk_size = 128 * 1024 # 128KB chunks are efficient for SD controllers
         current_actual_speed_mbps = 0.0
+        new_count = 0
+        last_status_update = 0
         
         for i, img_url in enumerate(unique_images):
             speed_info = f" ({current_actual_speed_mbps:.1f} MB/s)" if current_actual_speed_mbps > 0 else ""
@@ -242,6 +244,7 @@ def download_album(album_id, url, output_dir, force_fast=False):
                 continue
             
             if not os.path.exists(file_path):
+                check_storage_guardrail()
                 base_url = img_url.split('=')[0]
                 full_img_url = base_url + "=w3000"
                 try:
@@ -268,6 +271,14 @@ def download_album(album_id, url, output_dir, force_fast=False):
                                         # Include BOTH download time and write time for a realistic "system throughput"
                                         chunk_speed = len(chunk) / chunk_elapsed if chunk_elapsed > 0 else (target_speed_mbps * 1024 * 1024)
                                         current_actual_speed_mbps = chunk_speed / (1024 * 1024)
+                                        
+                                        # Update real-time speed in status
+                                        now = time.time()
+                                        if now - last_status_update > 0.5: # Update at most every 0.5s
+                                            update_album_status(album_id, "Syncing...", {
+                                                "speed_mbps": round(current_actual_speed_mbps, 2)
+                                            })
+                                            last_status_update = now
 
                                         if not force_fast:
                                             target_speed_bytes = target_speed_mbps * 1024 * 1024
