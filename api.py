@@ -392,6 +392,10 @@ def get_folders():
     image_dir = common.get_image_dir()
     selected = config.get('DEFAULT', 'selected_folders', fallback='all')
     
+    # Get albums and find which ones should be hidden from folder view
+    albums = downloader.get_albums()
+    hidden_paths = [a['path'] for a in albums if not a.get('in_folder_view', True)]
+    
     folders = []
     if os.path.exists(image_dir):
         # Walk the directory tree to find all subfolders
@@ -804,6 +808,7 @@ def get_albums_api():
     selected_list = [s.strip() for s in selected.split(',') if s.strip()] if selected != 'all' else []
 
     for album in albums:
+        album['in_folder_view'] = album.get('in_folder_view', True)
         stat = status_data.get(album['id'], "Idle")
         if isinstance(stat, dict):
             album['status'] = stat.get('status', 'Idle')
@@ -959,6 +964,27 @@ def add_album_api():
         return jsonify({"error": f"Internal system error while saving configuration: {str(e)}"}), 500
         
     return jsonify({"status": "success"})
+
+@app.route('/api/albums/update', methods=['POST'])
+def update_album_settings_api():
+    data = request.json
+    album_id = data.get('id')
+    settings = data.get('settings', {})
+    
+    albums = downloader.get_albums()
+    changed = False
+    for album in albums:
+        if album['id'] == album_id:
+            for key, value in settings.items():
+                album[key] = value
+            changed = True
+            break
+            
+    if changed:
+        with open(downloader.ALBUMS_FILE, 'w') as f:
+            json.dump(albums, f)
+        return jsonify({"status": "success"})
+    return jsonify({"error": "Album not found"}), 404
 
 @app.route('/api/albums/<album_id>', methods=['DELETE'])
 def delete_album_api(album_id):
