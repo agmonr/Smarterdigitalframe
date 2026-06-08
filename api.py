@@ -789,7 +789,6 @@ def get_albums_api():
     image_dir = common.get_image_dir()
 
     for album in albums:
-        album['in_folder_view'] = album.get('in_folder_view', True)
         stat = status_data.get(album['id'], "Idle")
         if isinstance(stat, dict):
             album['status'] = stat.get('status', 'Idle')
@@ -853,9 +852,16 @@ def add_album_api():
             return jsonify({"error": f"An album with ID '{album_id}' already exists."}), 400
     
     try:
-        albums.append({"id": album_id, "url": url, "path": path, "in_folder_view": True})
+        albums.append({"id": album_id, "url": url, "path": path})
         with open(downloader.ALBUMS_FILE, 'w') as f:
             json.dump(albums, f)
+            
+        # Trigger immediate sync for the new album at NORMAL speed (NOT fast sync)
+        threading.Thread(
+            target=downloader.download_album, 
+            args=(album_id, url, path, False), 
+            daemon=True
+        ).start()
         
         # Auto-add to selected_folders if not 'all'
         config = get_config()
