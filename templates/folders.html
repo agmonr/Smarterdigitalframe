@@ -46,18 +46,15 @@
         <p>Select which folders to include in the slideshow. If none are selected, all images will be shown.</p>
         
         <div style="margin-bottom: 15px;">
-            <button onclick="toggleAll(true)" style="padding: 5px 15px; font-size: 14px; background: #2ecc71;">Select All</button>
-            <button onclick="toggleAll(false)" style="padding: 5px 15px; font-size: 14px; background: #e74c3c;">Unselect All</button>
+            <button class="btn btn-primary" onclick="toggleAll(true)">Select All</button>
+            <button class="btn btn-danger" onclick="toggleAll(false)">Unselect All</button>
         </div>
 
         <div class="folder-list" id="folder-list">
             Loading folders...
         </div>
 
-        <div class="actions">
-            <button onclick="saveFolders()">Save Selection</button>
-            <div class="info">The frame service will restart automatically to apply changes.</div>
-        </div>
+        <div class="info">Changes apply automatically. The frame service will restart to apply changes.</div>
     </div>
 
     <script>
@@ -71,7 +68,7 @@
                 const list = document.getElementById('folder-list');
                 list.innerHTML = '';
                 
-                const selected = data.selected_folders === 'all' ? [] : data.selected_folders.split(',');
+                const selected = data.selected_folders === 'all' ? [] : data.selected_folders.split(',').map(s => s.trim()).filter(s => s);
                 
                 if (data.available_folders.length === 0) {
                     list.innerHTML = 'No subdirectories found in the pictures folder.';
@@ -86,12 +83,10 @@
                     const depth = (folder.match(/\//g) || []).length;
                     item.style.paddingLeft = (10 + (depth * 25)) + 'px';
                     
-                    // Check if has children
                     const hasChildren = data.available_folders.some(f => f.startsWith(folder + '/'));
                     const parentPath = folder.includes('/') ? folder.substring(0, folder.lastIndexOf('/')) : '';
                     item.dataset.parent = parentPath;
 
-                    // Hide if parent is not expanded
                     if (parentPath && !expandedFolders.has(parentPath)) {
                         item.classList.add('hidden');
                     }
@@ -108,7 +103,7 @@
                             expandedFolders.add(folder);
                             expandSubfolders(folder);
                         }
-                        loadFolders(); // Re-render to update visibility and icons
+                        loadFolders();
                     };
 
                     const checkbox = document.createElement('input');
@@ -122,7 +117,6 @@
                     const label = document.createElement('label');
                     label.className = 'folder-name';
                     label.htmlFor = 'folder-' + folder;
-                    // Show only the folder name, not full path
                     label.textContent = folder.split('/').pop();
 
                     checkbox.addEventListener('change', (e) => {
@@ -134,6 +128,7 @@
                                 cb.checked = isChecked;
                             }
                         });
+                        saveFolders();
                     });
                     
                     item.appendChild(toggle);
@@ -147,12 +142,9 @@
             }
         }
 
-        function expandSubfolders(path) {
-            // Handled by re-rendering in loadFolders
-        }
+        function expandSubfolders(path) {}
 
         function collapseSubfolders(path) {
-            // Remove all descendants from expandedFolders
             for (const expanded of expandedFolders) {
                 if (expanded.startsWith(path + '/')) {
                     expandedFolders.delete(expanded);
@@ -160,9 +152,10 @@
             }
         }
 
-        function toggleAll(checked) {
+        async function toggleAll(checked) {
             const checkboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
             checkboxes.forEach(cb => cb.checked = checked);
+            await saveFolders();
         }
 
         async function saveFolders() {
@@ -172,22 +165,26 @@
                 if (cb.checked) selected.push(cb.value);
             });
             
-            const value = selected.length === checkboxes.length ? 'all' : (selected.length === 0 ? 'all' : selected.join(','));
+            // If all are checked, send 'all'.
+            // If none are checked, send 'none'.
+            // Otherwise, send the comma-separated list.
+            let value = 'none';
+            if (selected.length === checkboxes.length) {
+                value = 'all';
+            } else if (selected.length > 0) {
+                value = selected.join(',');
+            } else {
+                value = 'none';
+            }
             
             try {
-                const response = await fetch('/api/folders', {
+                await fetch('/api/folders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ selected: value })
                 });
-                
-                if (!response.ok) {
-                    alert('Error saving settings.');
-                } else {
-                    alert('Settings saved successfully! The frame will now restart.');
-                }
             } catch (err) {
-                alert('Connection error.');
+                console.error('Connection error.', err);
             }
         }
 

@@ -122,6 +122,9 @@
                 if (folderData.selected_folders === 'all') {
                     isAllSelected = true;
                     selectedFolders = folderData.available_folders || [];
+                } else if (folderData.selected_folders === 'none') {
+                    isAllSelected = false;
+                    selectedFolders = [];
                 } else {
                     isAllSelected = false;
                     selectedFolders = folderData.selected_folders.split(',').map(s => s.trim()).filter(s => s);
@@ -193,13 +196,17 @@
                     current = current.filter(f => f !== path);
                 }
 
-                // Decide if we should send 'all' or the list
-                // If everything is selected, or if nothing is selected (default to all), send 'all'
-                let value = 'all';
-                if (current.length > 0 && current.length < available.length) {
+                // Decide if we should send 'all', 'none', or the list
+                // If everything is selected, send 'all'.
+                // If nothing is selected, send 'none'.
+                // Otherwise, send the comma-separated list.
+                let value = 'none';
+                if (current.length === available.length) {
+                    value = 'all';
+                } else if (current.length > 0) {
                     value = current.join(',');
-                } else if (current.length === 0) {
-                    value = 'all'; // Default if none selected
+                } else {
+                    value = 'none';
                 }
 
                 // Save the new selection
@@ -222,22 +229,32 @@
                 const albums = await response.json();
                 const folderRes = await fetch(`${API_BASE}/folders`);
                 const folderData = await folderRes.json();
+                const available = folderData.available_folders;
                 
-                let current = folderData.selected_folders === 'all' ? [...folderData.available_folders] : folderData.selected_folders.split(',').filter(s => s);
+                // Start with currently selected paths
+                let current = folderData.selected_folders === 'all' ? [...available] : (folderData.selected_folders === 'none' ? [] : folderData.selected_folders.split(',').map(s => s.trim()).filter(s => s));
                 
-                albums.forEach(album => {
-                    if (checked) {
-                        if (!current.includes(album.path)) current.push(album.path);
-                    } else {
-                        current = current.filter(f => f !== album.path);
-                    }
-                });
+                // Get all album paths
+                const albumPaths = albums.map(a => a.path);
 
-                let value = 'all';
-                if (current.length > 0 && current.length < folderData.available_folders.length) {
-                    value = current.join(',');
-                } else if (current.length === 0) {
+                if (checked) {
+                    // Select all: add all album paths to current, ensuring no duplicates
+                    albumPaths.forEach(path => {
+                        if (!current.includes(path)) current.push(path);
+                    });
+                } else {
+                    // Unselect all: remove all album paths from current
+                    current = current.filter(path => !albumPaths.includes(path));
+                }
+
+                // Decide if we should send 'all', 'none', or the list
+                let value = 'none';
+                if (current.length === available.length && available.length > 0) {
                     value = 'all';
+                } else if (current.length > 0) {
+                    value = current.join(',');
+                } else {
+                    value = 'none';
                 }
 
                 await fetch(`${API_BASE}/folders`, {

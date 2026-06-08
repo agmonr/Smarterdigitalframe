@@ -19,9 +19,6 @@ import common
 # Setup Logging using common library
 logger = common.setup_logger(__name__)
 
-API_RETRY_COUNT = 0
-MAX_RETRIES = 2
-
 get_config = common.get_config
 
 # Configuration loading
@@ -91,47 +88,16 @@ def set_screen_state(on):
     # Notify API of state change
     notify_api_screen_state(on)
 
-def restart_api_service():
-    """Finds, terminates, and restarts the api.py process."""
-    global API_RETRY_COUNT
-    logger.warning(f"Attempting to restart API service (Attempt {API_RETRY_COUNT + 1}/{MAX_RETRIES})...")
-    
-    # 1. Find the PID of api.py
-    try:
-        pid = int(subprocess.check_output(["pgrep", "-f", "python3 api.py"]).strip())
-        logger.info(f"Found api.py PID: {pid}. Terminating...")
-        os.kill(pid, signal.SIGTERM)
-        time.sleep(2) # Give it a moment to shut down
-    except subprocess.CalledProcessError:
-        logger.info("api.py not found running.")
-
-    # 2. Restart api.py
-    try:
-        # Run in the same environment/directory context
-        subprocess.Popen(["./venv/bin/python3", "api.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        logger.info("Successfully started new api.py process.")
-        API_RETRY_COUNT += 1
-    except Exception as e:
-        logger.error(f"Failed to restart api.py: {e}")
-
 def notify_api_screen_state(on):
     """Tell the API the screen was turned on/off so the dashboard stays in sync."""
-    global API_RETRY_COUNT
     state = "on" if on else "off"
     try:
         data = json.dumps({"state": state}).encode('utf-8')
         req = urllib.request.Request("http://localhost:5001/api/internal/screen_state", data=data, headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=2) as f:
-            # Success: Reset retry count if we were previously failing
-            if API_RETRY_COUNT > 0:
-                logger.info("API connection restored.")
-                API_RETRY_COUNT = 0
-    except Exception as e:
-        logger.error(f"API connection failed: {e}")
-        if API_RETRY_COUNT < MAX_RETRIES:
-            restart_api_service()
-        else:
-            logger.error("Max retries reached. Stopping API restart attempts.")
+            pass
+    except:
+        pass
 
 def update_state(type="image", img_path=None):
     global _last_state_data, _last_state_time
@@ -390,30 +356,31 @@ def get_images():
     sources = [IMAGE_DIR]
     
     selected = []
-    if SELECTED_FOLDERS != 'all':
+    if SELECTED_FOLDERS == 'none':
+        return [] # Explicitly return no images
+    elif SELECTED_FOLDERS != 'all':
         selected = [s.strip() for s in SELECTED_FOLDERS.split(',')]
-    
+
     for source in sources:
         if not os.path.exists(source): continue
-        
+
         for root, dirs, files in os.walk(source):
             # Get relative path from source to determine if this folder is selected
             rel_path = os.path.relpath(root, source)
-            
+
             if SELECTED_FOLDERS != 'all':
                 # Check if rel_path or any of its parents are in selected
                 is_selected = False
                 if rel_path == '.':
-                    # Images in the root directory are only shown if 'all' is selected
-                    # or if we explicitly allow them. For now, let's say they aren't 
-                    # included unless 'all' is chosen, to stay consistent with folder selection.
+                    # If 'none' or specific folders are selected, root images are excluded
+                    # unless explicitly included.
                     pass
                 else:
                     for s in selected:
                         if rel_path == s or rel_path.startswith(s + os.sep):
                             is_selected = True
                             break
-                
+
                 if not is_selected:
                     continue
 

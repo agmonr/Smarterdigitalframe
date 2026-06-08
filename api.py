@@ -424,7 +424,6 @@ def save_folders():
     
     with open(CONFIG_FILE, 'w') as f:
         config.write(f)
-    restart_display_service()
     return jsonify({"status": "success"})
 
 @app.route('/api/show', methods=['POST'])
@@ -873,7 +872,6 @@ def add_album_api():
                 config.set('DEFAULT', 'selected_folders', ",".join(current_selected))
                 with open(CONFIG_FILE, 'w') as f:
                     config.write(f)
-                restart_display_service() # Restart to apply folder change
     except Exception as e:
         return jsonify({"error": f"Internal system error while saving configuration: {str(e)}"}), 500
         
@@ -941,7 +939,6 @@ def delete_album_api(album_id):
                 config.set('DEFAULT', 'selected_folders', new_value)
                 with open(CONFIG_FILE, 'w') as f:
                     config.write(f)
-                restart_display_service()
         
     # 3. Clean up status
     status = downloader.get_album_status()
@@ -984,7 +981,7 @@ def sync_album_selection_on_startup():
         logger.error(f"Error during startup album sync: {e}")
 
 if __name__ == '__main__':
-    sync_album_selection_on_startup()
+    # sync_album_selection_on_startup()
     threading.Thread(target=motion_detection_thread, daemon=True).start()
     threading.Thread(target=camera_scheduler_thread, daemon=True).start()
     threading.Thread(target=google_photos_sync_thread, daemon=True).start()
