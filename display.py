@@ -19,6 +19,9 @@ import common
 # Setup Logging using common library
 logger = common.setup_logger(__name__)
 
+API_RETRY_COUNT = 0
+MAX_RETRIES = 2
+
 get_config = common.get_config
 
 # Configuration loading
@@ -88,16 +91,47 @@ def set_screen_state(on):
     # Notify API of state change
     notify_api_screen_state(on)
 
+def restart_api_service():
+    """Finds, terminates, and restarts the api.py process."""
+    global API_RETRY_COUNT
+    logger.warning(f"Attempting to restart API service (Attempt {API_RETRY_COUNT + 1}/{MAX_RETRIES})...")
+    
+    # 1. Find the PID of api.py
+    try:
+        pid = int(subprocess.check_output(["pgrep", "-f", "python3 api.py"]).strip())
+        logger.info(f"Found api.py PID: {pid}. Terminating...")
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(2) # Give it a moment to shut down
+    except subprocess.CalledProcessError:
+        logger.info("api.py not found running.")
+
+    # 2. Restart api.py
+    try:
+        # Run in the same environment/directory context
+        subprocess.Popen(["./venv/bin/python3", "api.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("Successfully started new api.py process.")
+        API_RETRY_COUNT += 1
+    except Exception as e:
+        logger.error(f"Failed to restart api.py: {e}")
+
 def notify_api_screen_state(on):
     """Tell the API the screen was turned on/off so the dashboard stays in sync."""
+    global API_RETRY_COUNT
     state = "on" if on else "off"
     try:
         data = json.dumps({"state": state}).encode('utf-8')
         req = urllib.request.Request("http://localhost:5001/api/internal/screen_state", data=data, headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=2) as f:
-            pass
-    except:
-        pass
+            # Success: Reset retry count if we were previously failing
+            if API_RETRY_COUNT > 0:
+                logger.info("API connection restored.")
+                API_RETRY_COUNT = 0
+    except Exception as e:
+        logger.error(f"API connection failed: {e}")
+        if API_RETRY_COUNT < MAX_RETRIES:
+            restart_api_service()
+        else:
+            logger.error("Max retries reached. Stopping API restart attempts.")
 
 def update_state(type="image", img_path=None):
     global _last_state_data, _last_state_time
