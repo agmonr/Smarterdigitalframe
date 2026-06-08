@@ -392,10 +392,6 @@ def get_folders():
     image_dir = common.get_image_dir()
     selected = config.get('DEFAULT', 'selected_folders', fallback='all')
     
-    # Get albums and find which ones should be hidden from folder view
-    albums = downloader.get_albums()
-    hidden_paths = [a['path'] for a in albums if not a.get('in_folder_view', True)]
-    
     folders = []
     if os.path.exists(image_dir):
         # Walk the directory tree to find all subfolders
@@ -405,8 +401,10 @@ def get_folders():
                 full_path = os.path.join(root, d)
                 rel_path = os.path.relpath(full_path, image_dir)
                 
-                # Skip if this path is marked as hidden from folder view
-                if rel_path in hidden_paths:
+                # Strictly filter out google_photos folders - they are managed separately
+                # Check if 'google_photos' or 'google-photos' is any part of the path
+                path_parts = rel_path.split(os.sep)
+                if 'google_photos' in path_parts or 'google-photos' in path_parts:
                     continue
                     
                 folders.append(rel_path)

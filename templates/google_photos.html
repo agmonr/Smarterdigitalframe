@@ -68,7 +68,6 @@
                 <thead>
                     <tr>
                         <th>Display</th>
-                        <th>In Folders</th>
                         <th>Name / ID</th>
                         <th>Local Path</th>
                         <th>Status</th>
@@ -156,11 +155,6 @@
                                    style="width: 20px; height: 20px; cursor: pointer;">
                         </td>
                         <td>
-                            <input type="checkbox" ${album.in_folder_view !== false ? 'checked' : ''} 
-                                   onchange="toggleInFolderView('${album.id}', this.checked)"
-                                   style="width: 20px; height: 20px; cursor: pointer;">
-                        </td>
-                        <td>
                             <strong><a href="${album.url}" target="_blank" style="text-decoration: none; color: inherit;">${album.id}</a></strong>
                         </td>
                         <td><code>${album.path}</code></td>
@@ -219,19 +213,6 @@
                 loadAlbums();
             } catch (e) {
                 alert("Error updating selection: " + e.message);
-            }
-        }
-
-        async function toggleInFolderView(id, isChecked) {
-            try {
-                await fetch(`${API_BASE}/albums/update`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, settings: { in_folder_view: isChecked } })
-                });
-                loadAlbums();
-            } catch (e) {
-                alert("Error updating visibility: " + e.message);
             }
         }
 
