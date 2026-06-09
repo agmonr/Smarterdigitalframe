@@ -393,6 +393,7 @@ def get_folders():
     selected = config.get('DEFAULT', 'selected_folders', fallback='all')
     
     folders = []
+    all_folders = []
     if os.path.exists(image_dir):
         # Walk the directory tree to find all subfolders
         for root, dirs, files in os.walk(image_dir):
@@ -401,7 +402,9 @@ def get_folders():
                 full_path = os.path.join(root, d)
                 rel_path = os.path.relpath(full_path, image_dir)
                 
-                # Strictly filter out google_photos folders - they are managed separately
+                all_folders.append(rel_path)
+
+                # Strictly filter out google_photos folders - they are managed separately for the tree view
                 # Check if 'google_photos' or 'google-photos' is any part of the path
                 path_parts = rel_path.split(os.sep)
                 if 'google_photos' in path_parts or 'google-photos' in path_parts:
@@ -411,6 +414,7 @@ def get_folders():
     
     return jsonify({
         "available_folders": sorted(folders),
+        "all_folders": sorted(all_folders),
         "selected_folders": selected
     })
 

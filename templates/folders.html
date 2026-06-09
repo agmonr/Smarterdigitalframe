@@ -68,7 +68,14 @@
                 const list = document.getElementById('folder-list');
                 list.innerHTML = '';
                 
-                const selected = data.selected_folders === 'all' ? [] : data.selected_folders.split(',').map(s => s.trim()).filter(s => s);
+                let selected = [];
+                if (data.selected_folders === 'all') {
+                    selected = data.all_folders || [];
+                } else if (data.selected_folders === 'none') {
+                    selected = [];
+                } else {
+                    selected = data.selected_folders.split(',').map(s => s.trim()).filter(s => s);
+                }
                 
                 if (data.available_folders.length === 0) {
                     list.innerHTML = 'No subdirectories found in the pictures folder.';
@@ -159,25 +166,46 @@
         }
 
         async function saveFolders() {
-            const checkboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
-            const selected = [];
-            checkboxes.forEach(cb => {
-                if (cb.checked) selected.push(cb.value);
-            });
-            
-            // If all are checked, send 'all'.
-            // If none are checked, send 'none'.
-            // Otherwise, send the comma-separated list.
-            let value = 'none';
-            if (selected.length === checkboxes.length) {
-                value = 'all';
-            } else if (selected.length > 0) {
-                value = selected.join(',');
-            } else {
-                value = 'none';
-            }
-            
             try {
+                // Fetch current available folders info to get the full list (all_folders)
+                const folderRes = await fetch('/api/folders');
+                const folderData = await folderRes.json();
+                const allFolders = folderData.all_folders;
+
+                const checkboxes = document.querySelectorAll('#folder-list input[type="checkbox"]');
+                const selectedOnPage = [];
+                checkboxes.forEach(cb => {
+                    if (cb.checked) selectedOnPage.push(cb.value);
+                });
+
+                // Since this page only shows local folders, we need to know which Google Photos 
+                // folders are currently selected in the background to preserve them.
+                const currentSelected = folderData.selected_folders === 'all' ? [...allFolders] : (folderData.selected_folders === 'none' ? [] : folderData.selected_folders.split(',').map(s => s.trim()).filter(s => s));
+                
+                // Final selection:
+                // 1. Start with everything currently selected
+                // 2. Remove any LOCAL folders that are NOT checked on this page
+                // 3. Add any LOCAL folders that ARE checked on this page
+                // (Google Photos folders remain untouched because they aren't on this page)
+                
+                const localFolders = folderData.available_folders;
+                let finalSelected = currentSelected.filter(f => !localFolders.includes(f) || selectedOnPage.includes(f));
+                
+                // Add any newly checked local folders that weren't in currentSelected
+                selectedOnPage.forEach(f => {
+                    if (!finalSelected.includes(f)) finalSelected.push(f);
+                });
+
+                // Decide if we should send 'all', 'none', or the list
+                let value = 'none';
+                if (finalSelected.length === allFolders.length) {
+                    value = 'all';
+                } else if (finalSelected.length > 0) {
+                    value = finalSelected.join(',');
+                } else {
+                    value = 'none';
+                }
+                
                 await fetch('/api/folders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

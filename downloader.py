@@ -20,7 +20,7 @@ STORAGE_GUARDRAIL_GB = 1.0
 # RAM-based path for persisted speed limit
 SPEED_CONFIG_FILE = os.path.join(common.SHM_ROOT, "download_speed.json")
 
-def get_persisted_speed(default_speed=6.0):
+def get_persisted_speed(default_speed=4.0):
     """Reads the saved speed limit from the RAM-based config file."""
     if os.path.exists(SPEED_CONFIG_FILE):
         try:
@@ -162,6 +162,17 @@ def download_album(album_id, url, output_dir, force_fast=False):
             base_dir = common.get_image_dir()
             output_dir = os.path.join(base_dir, output_dir)
             
+        # First sync detection: if directory is empty or doesn't exist, override force_fast to False
+        is_first_sync = True
+        if os.path.exists(output_dir):
+            if any(f.lower().endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(output_dir)):
+                is_first_sync = False
+        
+        if is_first_sync:
+            if force_fast:
+                logger.info(f"First sync detected for {album_id}. Keeping speed limit for safety.")
+            force_fast = False
+
         os.makedirs(output_dir, exist_ok=True)
         
         headers = {
@@ -218,6 +229,11 @@ def download_album(album_id, url, output_dir, force_fast=False):
         # Load persisted speed from RAM
         saved_speed = get_persisted_speed()
         target_speed_mbps = saved_speed
+        
+        # Enforce 4MB/s cap for standard syncs (micro SSD safety)
+        if not force_fast:
+            target_speed_mbps = min(target_speed_mbps, 4.0)
+            
         chunk_size = 128 * 1024 # 128KB chunks are efficient for SD controllers
         current_actual_speed_mbps = 0.0
         
