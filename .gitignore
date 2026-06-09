@@ -8,3 +8,4 @@ venv/*
 .wifi_configured
 *.db
 images/*
+removed/
