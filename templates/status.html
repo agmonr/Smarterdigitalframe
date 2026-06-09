@@ -36,6 +36,11 @@
                 <div id="mem-usage" class="stat-value">-- %</div>
                 <div id="mem-info">-- MB used / -- MB total</div>
             </div>
+            <div class="card">
+                <h3>BLE Devices in Range</h3>
+                <div id="ble-devices" class="stat-value">--</div>
+                <div class="info-text">Devices within proximity threshold</div>
+            </div>
         </div>
 
         <div class="card" style="border-left: 5px solid #e67e22;">
@@ -139,6 +144,7 @@
                 document.getElementById('cpu-temp').textContent = data.cpu_temp ? data.cpu_temp.toFixed(1) + ' °C' : 'N/A';
                 document.getElementById('mem-usage').textContent = data.memory.percent.toFixed(1) + ' %';
                 document.getElementById('mem-info').textContent = `${data.memory.used} MB used / ${data.memory.total} MB total`;
+                document.getElementById('ble-devices').textContent = data.ble_devices_in_range !== undefined ? data.ble_devices_in_range : '--';
                 
                 // Fetch Sync Status
                 const syncResponse = await fetch('/api/sync/status');

@@ -48,3 +48,11 @@ imagedir_captures = captures/
 ap_name = dframe
 ap_password = DigitalFrame
 
+[PROXIMITY]
+enabled = False
+rssi_threshold = -75
+stable_threshold = 0.5
+min_samples = 10
+ignore_after_hours = 2
+timeout = 300
+

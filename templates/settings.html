@@ -183,6 +183,31 @@
                 <input type="text" id="camera-schedule" placeholder="0 0-6 * * *">
             </div>
 
+            <h2>Proximity Detection (BLE)</h2>
+            <div class="form-group">
+                <label>Enable Proximity Detection</label>
+                <select id="proximity-enabled">
+                    <option value="True">Enabled</option>
+                    <option value="False">Disabled</option>
+                </select>
+                <div class="info-text">Uses Bluetooth to detect nearby dynamic devices (phones).</div>
+            </div>
+            <div class="form-group">
+                <label>RSSI Threshold (dBm)</label>
+                <input type="number" id="proximity-rssi-threshold" min="-100" max="0">
+                <div class="info-text">Closer is higher (e.g., -75). Only devices above this are tracked.</div>
+            </div>
+            <div class="form-group">
+                <label>Stable Threshold (Std Dev)</label>
+                <input type="number" id="proximity-stable-threshold" step="0.1" min="0">
+                <div class="info-text">Lower is stricter (e.g., 0.5). Stationary devices have low variance.</div>
+            </div>
+            <div class="form-group">
+                <label>Timeout (seconds)</label>
+                <input type="number" id="proximity-timeout" min="10">
+                <div class="info-text">How long to keep the screen on after detection.</div>
+            </div>
+
             <h2>Network Settings (Access Point)</h2>
             <div class="form-group">
                 <label>Default AP Name (SSID)</label>
@@ -264,6 +289,12 @@
                 const networkConfig = config.NETWORK || {};
                 document.getElementById('ap-name').value = networkConfig.ap_name || 'dframe';
                 document.getElementById('ap-password').value = networkConfig.ap_password || 'DigitalFrame';
+
+                const proximityConfig = config.PROXIMITY || {};
+                document.getElementById('proximity-enabled').value = (proximityConfig.enabled && proximityConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
+                document.getElementById('proximity-rssi-threshold').value = proximityConfig.rssi_threshold || -75;
+                document.getElementById('proximity-stable-threshold').value = proximityConfig.stable_threshold || 0.5;
+                document.getElementById('proximity-timeout').value = proximityConfig.timeout || 300;
             } catch (e) {
                 console.error("Error loading config", e);
             }
@@ -303,6 +334,12 @@
                 NETWORK: {
                     ap_name: document.getElementById('ap-name').value,
                     ap_password: document.getElementById('ap-password').value
+                },
+                PROXIMITY: {
+                    enabled: document.getElementById('proximity-enabled').value,
+                    rssi_threshold: document.getElementById('proximity-rssi-threshold').value,
+                    stable_threshold: document.getElementById('proximity-stable-threshold').value,
+                    timeout: document.getElementById('proximity-timeout').value
                 }
             };
 

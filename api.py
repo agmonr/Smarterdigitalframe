@@ -18,6 +18,7 @@ from croniter import croniter
 from datetime import datetime
 import downloader
 import common
+import proximity
 
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates'))
 app = Flask(__name__, template_folder=template_dir)
@@ -33,98 +34,124 @@ get_config = common.get_config
 set_screen_state = common.set_screen_state
 get_hardware_screen_state = common.get_hardware_screen_state
 
-# Motion Detection State
-motion_data = {
+# Motion and Proximity State
+presence_data = {
     "last_frame": None,
-    "last_movement_time": time.time(),
-    "screen_state": "on"
+    "last_presence_time": time.time(),
+    "screen_state": "on",
+    "ble_devices_in_range": 0
 }
 camera_lock = threading.Lock()
+proximity_scanner = None
 
-def motion_detection_thread():
+def on_proximity_detected():
+    presence_data["last_presence_time"] = time.time()
+    if presence_data["screen_state"] == "off":
+        logging.info("Proximity detected! Turning screen ON.")
+        set_screen_state(True)
+        presence_data["screen_state"] = "on"
+        restart_display_service()
+    else:
+        # Just update last presence time to prevent timeout
+        pass
+
+def presence_detection_thread():
     while True:
         try:
             config = get_config()
             weak_machine = config.getboolean('DEFAULT', 'weak_machine', fallback=False)
             
-            # Check both MOTION and CAMERA enabled flags
-            if not config.has_section('MOTION') or not config.getboolean('MOTION', 'enabled', fallback=False) or \
-               not config.getboolean('CAMERA', 'enabled', fallback=True):
+            motion_enabled = config.getboolean('MOTION', 'enabled', fallback=False)
+            camera_enabled = config.getboolean('CAMERA', 'enabled', fallback=True)
+            proximity_enabled = config.getboolean('PROXIMITY', 'enabled', fallback=False)
+
+            if not (motion_enabled and camera_enabled) and not proximity_enabled:
                 time.sleep(30 if weak_machine else 5)
                 continue
 
             # Sync internal state with actual hardware state
             current_state = get_hardware_screen_state()
-            motion_data["screen_state"] = current_state
+            presence_data["screen_state"] = current_state
+            
+            # Update BLE device count if scanner is active
+            if proximity_scanner:
+                presence_data["ble_devices_in_range"] = proximity_scanner.devices_in_range
 
-            sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
-            auto_sens = config.getboolean('MOTION', 'auto_sensitivity', fallback=False)
-            
-            effective_sensitivity = sensitivity
-            if auto_sens and motion_data["last_frame"] is not None:
-                light = get_avg_light(motion_data["last_frame"])
-                if light < 50:
-                    effective_sensitivity = min(100, sensitivity + 30)
-                elif light > 200:
-                    effective_sensitivity = max(1, sensitivity - 20)
-            
-            timeout = config.getint('MOTION', 'timeout', fallback=300)
-            
-            # Map sensitivity (1-100) to threshold (100-1)
-            # Higher sensitivity means lower threshold/smaller changes detected
-            threshold = max(1, 100 - effective_sensitivity)
+            if motion_enabled and camera_enabled:
+                sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
+                auto_sens = config.getboolean('MOTION', 'auto_sensitivity', fallback=False)
+                
+                effective_sensitivity = sensitivity
+                if auto_sens and presence_data["last_frame"] is not None:
+                    light = get_avg_light(presence_data["last_frame"])
+                    if light < 50:
+                        effective_sensitivity = min(100, sensitivity + 30)
+                    elif light > 200:
+                        effective_sensitivity = max(1, sensitivity - 20)
+                
+                # Map sensitivity (1-100) to threshold (100-1)
+                threshold = max(1, 100 - effective_sensitivity)
 
-            # Shutter (exposure time in us) and Gain settings for low light
-            shutter = config.getint('MOTION', 'shutter', fallback=0)
-            gain = config.getint('MOTION', 'gain', fallback=0)
-            
-            # Capture a small image for motion detection to save CPU
-            cmd = ['rpicam-still', '-n', '-o', '-', '-t', '200', '--width', '320', '--height', '240', '--hflip', '--vflip']
-            if shutter > 0:
-                cmd.extend(['--shutter', str(shutter)])
-            if gain > 0:
-                cmd.extend(['--gain', str(gain)])
-            
-            if shutil.which('rpicam-still') is None and shutil.which('libcamera-still'):
-                cmd[0] = 'libcamera-still'
-            
-            with camera_lock:
-                result = subprocess.run(cmd, capture_output=True)
-            
-            if result.returncode == 0:
-                nparr = np.frombuffer(result.stdout, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-                if frame is not None:
-                    frame = cv2.GaussianBlur(frame, (21, 21), 0)
-                    
-                    if motion_data["last_frame"] is not None:
-                        frame_delta = cv2.absdiff(motion_data["last_frame"], frame)
-                        thresh = cv2.threshold(frame_delta, threshold, 255, cv2.THRESH_BINARY)[1]
-                        thresh = cv2.dilate(thresh, None, iterations=2)
+                shutter = config.getint('MOTION', 'shutter', fallback=0)
+                gain = config.getint('MOTION', 'gain', fallback=0)
+                
+                cmd = ['rpicam-still', '-n', '-o', '-', '-t', '200', '--width', '320', '--height', '240', '--hflip', '--vflip']
+                if shutter > 0:
+                    cmd.extend(['--shutter', str(shutter)])
+                if gain > 0:
+                    cmd.extend(['--gain', str(gain)])
+                
+                if shutil.which('rpicam-still') is None and shutil.which('libcamera-still'):
+                    cmd[0] = 'libcamera-still'
+                
+                with camera_lock:
+                    result = subprocess.run(cmd, capture_output=True)
+                
+                if result.returncode == 0:
+                    nparr = np.frombuffer(result.stdout, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+                    if frame is not None:
+                        frame = cv2.GaussianBlur(frame, (21, 21), 0)
                         
-                        # Calculate percentage of changed pixels
-                        changed_pixels = np.sum(thresh) / 255
-                        change_percent = (changed_pixels / (frame.shape[0] * frame.shape[1])) * 100
+                        if presence_data["last_frame"] is not None:
+                            frame_delta = cv2.absdiff(presence_data["last_frame"], frame)
+                            thresh = cv2.threshold(frame_delta, threshold, 255, cv2.THRESH_BINARY)[1]
+                            thresh = cv2.dilate(thresh, None, iterations=2)
+                            
+                            changed_pixels = np.sum(thresh) / 255
+                            change_percent = (changed_pixels / (frame.shape[0] * frame.shape[1])) * 100
+                            
+                            if change_percent > 0.5:
+                                presence_data["last_presence_time"] = time.time()
+                                if current_state == "off":
+                                    set_screen_state(True)
+                                    presence_data["screen_state"] = "on"
+                                    restart_display_service()
                         
-                        # If more than 0.5% of pixels changed, count as movement
-                        if change_percent > 0.5:
-                            motion_data["last_movement_time"] = time.time()
-                            if current_state == "off":
-                                set_screen_state(True)
-                                motion_data["screen_state"] = "on"
-                                restart_display_service()
-                    
-                    motion_data["last_frame"] = frame
+                        presence_data["last_frame"] = frame
             
             # Check for timeout
-            if time.time() - motion_data["last_movement_time"] > timeout:
-                if current_state == "on":
-                    set_screen_state(False)
-                    motion_data["screen_state"] = "off"
+            motion_timeout = config.getint('MOTION', 'timeout', fallback=300)
+            proximity_timeout = config.getint('PROXIMITY', 'timeout', fallback=300)
             
-            # Sleep between checks
+            effective_timeout = 300
+            if motion_enabled and proximity_enabled:
+                effective_timeout = max(motion_timeout, proximity_timeout)
+            elif motion_enabled:
+                effective_timeout = motion_timeout
+            elif proximity_enabled:
+                effective_timeout = proximity_timeout
+
+            if time.time() - presence_data["last_presence_time"] > effective_timeout:
+                if current_state == "on":
+                    # Check manual override
+                    if not os.path.exists("manual_on.tmp"):
+                        set_screen_state(False)
+                        presence_data["screen_state"] = "off"
+            
             time.sleep(30 if weak_machine else 2)
         except Exception as e:
+            logging.error(f"Error in presence_detection_thread: {e}")
             time.sleep(10)
 
 # Camera Scheduling Thread
@@ -234,14 +261,14 @@ def get_motion_config():
         return jsonify({"enabled": False, "sensitivity": 50, "auto_sensitivity": False, "timeout": 300})
 
     current_state = get_hardware_screen_state()
-    motion_data["screen_state"] = current_state
+    presence_data["screen_state"] = current_state
     
     sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
     auto_sens = config.getboolean('MOTION', 'auto_sensitivity', fallback=False)
     
     effective_sensitivity = sensitivity
-    if auto_sens and motion_data["last_frame"] is not None:
-        light = get_avg_light(motion_data["last_frame"])
+    if auto_sens and presence_data["last_frame"] is not None:
+        light = get_avg_light(presence_data["last_frame"])
         if light < 50:
             effective_sensitivity = min(100, sensitivity + 30)
         elif light > 200:
@@ -255,7 +282,7 @@ def get_motion_config():
         "timeout": config.getint('MOTION', 'timeout', fallback=300),
         "shutter": config.getint('MOTION', 'shutter', fallback=0),
         "gain": config.getint('MOTION', 'gain', fallback=0),
-        "last_movement_seconds_ago": int(time.time() - motion_data["last_movement_time"]),
+        "last_movement_seconds_ago": int(time.time() - presence_data["last_presence_time"]),
         "screen_state": current_state
     })
 
@@ -569,16 +596,16 @@ def screen_control():
                     os.remove("manual_on.tmp")
             
             set_screen_state(on)
-            motion_data["screen_state"] = state
+            presence_data["screen_state"] = state
             if on:
-                motion_data["last_movement_time"] = time.time()
+                presence_data["last_presence_time"] = time.time()
                 restart_display_service()
             return jsonify({"status": "success", "state": state})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
     else:
         state = get_hardware_screen_state()
-        motion_data["screen_state"] = state
+        presence_data["screen_state"] = state
         return jsonify({"state": state})
 
 @app.route('/api/internal/screen_state', methods=['POST'])
@@ -586,9 +613,9 @@ def sync_screen_state():
     data = request.json
     state = data.get('state')
     if state in ['on', 'off']:
-        motion_data["screen_state"] = state
+        presence_data["screen_state"] = state
         if state == 'on':
-            motion_data["last_movement_time"] = time.time()
+            presence_data["last_presence_time"] = time.time()
         return jsonify({"status": "success"})
     return jsonify({"status": "error"}), 400
 
@@ -776,7 +803,8 @@ def get_system_status():
             "used": mem.used // (2**20),
             "free": mem.available // (2**20),
             "percent": mem.percent
-        }
+        },
+        "ble_devices_in_range": presence_data["ble_devices_in_range"]
     })
 
 @app.route('/system')
@@ -986,7 +1014,10 @@ def sync_album_selection_on_startup():
 
 if __name__ == '__main__':
     # sync_album_selection_on_startup()
-    threading.Thread(target=motion_detection_thread, daemon=True).start()
+    proximity_scanner = proximity.ProximityScanner(on_proximity_detected)
+    proximity_scanner.start()
+    
+    threading.Thread(target=presence_detection_thread, daemon=True).start()
     threading.Thread(target=camera_scheduler_thread, daemon=True).start()
     threading.Thread(target=google_photos_sync_thread, daemon=True).start()
     app.run(host='0.0.0.0', port=5001)
