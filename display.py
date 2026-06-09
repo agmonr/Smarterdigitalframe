@@ -430,17 +430,15 @@ def get_next_image_index(images, idx, images_shown_in_group):
 
 def main():
     logger.info("Starting Digital Frame service")
-    # Initial state should respect schedule
-    now = datetime.now()
-    in_off_hours = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
-    if in_off_hours:
-        logger.info(f"Startup: Currently in OFF hours ({now.hour}), starting with screen OFF")
-        set_screen_state(False)
-        was_blanked = True
-    else:
-        logger.info(f"Startup: Currently in ON hours ({now.hour}), starting with screen ON")
-        set_screen_state(True)
-        was_blanked = False
+    
+    # Startup: Force screen ON and clean up any manual overrides
+    logger.info("Startup: Forcing screen ON")
+    set_screen_state(True)
+    was_blanked = False
+    if os.path.exists("manual_off.tmp"):
+        os.remove("manual_off.tmp")
+    if os.path.exists("manual_on.tmp"):
+        os.remove("manual_on.tmp")
 
     load_fb_info()
     with open(FB_DEV, "wb") as fb:
@@ -463,6 +461,7 @@ def main():
     images.sort()
     idx = get_random_image_index(images)
     images_shown_in_group = 0
+    now = datetime.now()
     last_hour = now.hour
     last_minute = -1
     last_display_time = 0
@@ -497,6 +496,24 @@ def main():
                     logger.info("New images detected, refreshed list.")
 
             except: pass
+            
+            # Check for manual screen override
+            is_manually_off = os.path.exists("manual_off.tmp")
+            
+            # Determine schedule state
+            now = datetime.now()
+            in_off_hours = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
+            
+            # Logic: If manual OFF, keep OFF. Else, follow schedule.
+            should_be_on = not (is_manually_off or in_off_hours)
+            
+            # Update screen state if it doesn't match requirement
+            if should_be_on and was_blanked:
+                set_screen_state(True)
+                was_blanked = False
+            elif not should_be_on and not was_blanked:
+                set_screen_state(False)
+                was_blanked = True
 
             now = datetime.now()
             

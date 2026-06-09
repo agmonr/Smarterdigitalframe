@@ -47,10 +47,13 @@ proximity_scanner = None
 def on_proximity_detected():
     presence_data["last_presence_time"] = time.time()
     if presence_data["screen_state"] == "off":
-        logging.info("Proximity detected! Turning screen ON.")
-        set_screen_state(True)
-        presence_data["screen_state"] = "on"
-        restart_display_service()
+        # Check manual off override
+        if not os.path.exists("manual_off.tmp"):
+            logging.info("Proximity detected! Turning screen ON.")
+            set_screen_state(True)
+            presence_data["screen_state"] = "on"
+        else:
+            logging.info("Proximity detected, but screen is manually set to OFF.")
     else:
         # Just update last presence time to prevent timeout
         pass
@@ -588,18 +591,20 @@ def screen_control():
         try:
             on = (state == 'on')
             if on:
-                # Create manual override file
+                # Manual ON: Create override file, remove OFF override
                 with open("manual_on.tmp", "w") as f: f.write("1")
+                if os.path.exists("manual_off.tmp"):
+                    os.remove("manual_off.tmp")
             else:
-                # Remove manual override file if it exists
+                # Manual OFF: Create override file, remove ON override
+                with open("manual_off.tmp", "w") as f: f.write("1")
                 if os.path.exists("manual_on.tmp"):
                     os.remove("manual_on.tmp")
-            
+
             set_screen_state(on)
             presence_data["screen_state"] = state
             if on:
                 presence_data["last_presence_time"] = time.time()
-                restart_display_service()
             return jsonify({"status": "success", "state": state})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500

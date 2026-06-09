@@ -1,0 +1,21 @@
+Summary of the Plan                                                                                                                                                                     
+                                                                                                                                                                                             
+      1. Block Automatic Wake-up: I will implement a manual_off.tmp file. When you click "Turn OFF", this file will be created. The background motion and proximity detection will check for 
+         this file and will not turn the screen back on if it exists.                                                                                                                        
+      2. Toggle Logic (api.py):                                                                                                                                                              
+          * Turn OFF: Create manual_off.tmp, remove manual_on.tmp, and turn the screen off without restarting the service.                                                                   
+          * Turn ON: Create manual_on.tmp, remove manual_off.tmp, and turn the screen on without restarting the service.                                                                     
+      3. System Startup: I will modify the startup logic in display.py to ensure the screen is always turned ON when the system starts, even if it is currently "off hours" according to the 
+         schedule. This satisfies your requirement that it starts with the screen on.                                                                                                        
+      4. Cleanup: I will also remove the service restarts from the proximity and motion detection logic.                                                                                     
+                                                                                                                                                                                             
+     Strategy Details                                                                                                                                                                        
+                                                                                                                                                                                             
+      * api.py:                                                                                                                                                                              
+          * Update screen_control to handle manual_off.tmp.                                                                                                                                  
+          * Update presence_detection_thread and on_proximity_detected to respect manual_off.tmp.                                                                                            
+          * Remove all restart_display_service() calls related to screen toggling.                                                                                                           
+      * display.py:                                                                                                                                                                          
+          * Force set_screen_state(True) at the beginning of main().                                                                                                                         
+          * Ensure any existing manual_off.tmp is removed on startup so that "Manual Off" doesn't persist across a full system reboot (unless you prefer it to persist?).                    
+          * Update the loop to respect manual_off.tmp so the schedule doesn't fight with your manual setting.      
