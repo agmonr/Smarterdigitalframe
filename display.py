@@ -684,12 +684,17 @@ def main():
                 if is_periodic or is_scheduled:
                     was_periodic = True
                     display_hourly_clock(fb, current_image_obj, images[idx] if images and idx < len(images) else None)
-                    time.sleep(0.05) # ~20 FPS for smooth anti-burn-in movement
-                    continue # Stay in clock mode
+                    # Don't use 'continue' here, allow the rest of the loop to run
+                    # so that 'should_refresh' logic can trigger image rotation.
+                    # We use a small sleep to maintain responsiveness for animations
+                    # but avoid 100% CPU.
+                    wake_event.wait(0.05)
+                    wake_event.clear()
+                    # We don't continue, so the logic below for should_refresh will be evaluated.
 
             # Logic for when to refresh display
             should_refresh = False
-            if was_periodic:
+            if was_periodic and not (is_periodic or is_scheduled):
                 should_refresh = True
                 was_periodic = False
             elif time.time() - last_rotation_time >= INTERVAL:
