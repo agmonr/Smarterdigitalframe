@@ -38,6 +38,7 @@ get_hardware_screen_state = common.get_hardware_screen_state
 presence_data = {
     "last_frame": None,
     "last_presence_time": time.time(),
+    "last_proximity_time": 0,
     "screen_state": "on",
     "ble_devices_in_range": 0
 }
@@ -45,8 +46,17 @@ camera_lock = threading.Lock()
 proximity_scanner = None
 
 def on_proximity_detected():
-    presence_data["last_presence_time"] = time.time()
-    if presence_data["screen_state"] == "off":
+    now = time.time()
+    # Cool-down: Only trigger every 5 seconds to avoid flooding
+    if now - presence_data["last_proximity_time"] < 5:
+        return
+    presence_data["last_proximity_time"] = now
+    
+    presence_data["last_presence_time"] = now
+    # Get actual hardware state to ensure we are in sync
+    current_hw_state = get_hardware_screen_state()
+    
+    if current_hw_state == "off":
         # Check manual off override
         if not os.path.exists("manual_off.tmp"):
             logging.info("Proximity detected! Turning screen ON.")
@@ -56,8 +66,8 @@ def on_proximity_detected():
         else:
             logging.info("Proximity detected, but screen is manually set to OFF.")
     else:
-        # Just update last presence time to prevent timeout
-        pass
+        # Already ON, just sync state
+        presence_data["screen_state"] = "on"
 
 def presence_detection_thread():
     while True:
@@ -69,13 +79,13 @@ def presence_detection_thread():
             camera_enabled = config.getboolean('CAMERA', 'enabled', fallback=True)
             proximity_enabled = config.getboolean('PROXIMITY', 'enabled', fallback=False)
 
+            # Sync internal state with actual hardware state at each check
+            current_hw_state = get_hardware_screen_state()
+            presence_data["screen_state"] = current_hw_state
+
             if not (motion_enabled and camera_enabled) and not proximity_enabled:
                 time.sleep(30 if weak_machine else 5)
                 continue
-
-            # Sync internal state with actual hardware state
-            current_state = get_hardware_screen_state()
-            presence_data["screen_state"] = current_state
             
             # Update BLE device count if scanner is active
             if proximity_scanner:
@@ -127,7 +137,7 @@ def presence_detection_thread():
                             
                             if change_percent > 0.5:
                                 presence_data["last_presence_time"] = time.time()
-                                if current_state == "off":
+                                if current_hw_state == "off":
                                     set_screen_state(True)
                                     presence_data["screen_state"] = "on"
                                     common.notify_display_process()
@@ -147,9 +157,10 @@ def presence_detection_thread():
                 effective_timeout = proximity_timeout
 
             if time.time() - presence_data["last_presence_time"] > effective_timeout:
-                if current_state == "on":
+                if current_hw_state == "on":
                     # Check manual override
                     if not os.path.exists("manual_on.tmp"):
+                        logging.info(f"Presence timeout ({effective_timeout}s). Turning screen OFF.")
                         set_screen_state(False)
                         presence_data["screen_state"] = "off"
             
