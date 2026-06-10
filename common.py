@@ -5,6 +5,21 @@ import subprocess
 import time
 import logging
 import sqlite3
+import signal
+
+def notify_display_process():
+    """Send SIGUSR1 to the display process to wake it up."""
+    state = get_state()
+    pid = state.get('pid')
+    if pid:
+        try:
+            os.kill(pid, signal.SIGUSR1)
+            return True
+        except ProcessLookupError:
+            pass
+        except Exception as e:
+            print(f"Error notifying display process {pid}: {e}")
+    return False
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(PROJECT_ROOT, 'config.ini')
@@ -217,11 +232,25 @@ def setup_logger(name, filename='digitalframe.log', level=None):
     return logger
 
 def set_screen_state(on):
-    """Unified screen control using both vcgencmd and blanking."""
+    """Unified screen control using DRM, vcgencmd, blanking, and setterm."""
     val_v = "1" if on else "0"
     val_b = "0" if on else "1"
+    
+    # Try DRM DPMS (most reliable on modern Pi OS with KMS)
     try:
-        # Try vcgencmd (HDMI)
+        drm_path = "/sys/class/drm/"
+        if os.path.exists(drm_path):
+            for card in os.listdir(drm_path):
+                if "HDMI-A" in card:
+                    dpms_file = os.path.join(drm_path, card, "dpms")
+                    if os.path.exists(dpms_file):
+                        with open(dpms_file, "w") as f:
+                            f.write("On" if on else "Off")
+    except:
+        pass
+
+    try:
+        # Try vcgencmd (HDMI legacy)
         subprocess.run(['vcgencmd', 'display_power', val_v], check=False, capture_output=True)
     except:
         pass

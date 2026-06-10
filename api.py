@@ -52,6 +52,7 @@ def on_proximity_detected():
             logging.info("Proximity detected! Turning screen ON.")
             set_screen_state(True)
             presence_data["screen_state"] = "on"
+            common.notify_display_process()
         else:
             logging.info("Proximity detected, but screen is manually set to OFF.")
     else:
@@ -129,7 +130,7 @@ def presence_detection_thread():
                                 if current_state == "off":
                                     set_screen_state(True)
                                     presence_data["screen_state"] = "on"
-                                    restart_display_service()
+                                    common.notify_display_process()
                         
                         presence_data["last_frame"] = frame
             
@@ -516,7 +517,7 @@ def update_config():
 
     with open(CONFIG_FILE, 'w') as f:
         config.write(f)
-    restart_display_service() # Restart to apply config
+    common.notify_display_process() # Notify to apply config without restart
     return jsonify({"status": "success", "message": "Configuration updated"})
 
 def _restart_frame_process():
@@ -605,6 +606,7 @@ def screen_control():
             presence_data["screen_state"] = state
             if on:
                 presence_data["last_presence_time"] = time.time()
+            common.notify_display_process()
             return jsonify({"status": "success", "state": state})
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500

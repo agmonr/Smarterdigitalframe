@@ -14,10 +14,14 @@ from croniter import croniter
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageChops, ImageOps
 import math
+import threading
 import common
 
 # Setup Logging using common library
 logger = common.setup_logger(__name__)
+
+# Wake event for responsive sleep
+wake_event = threading.Event()
 
 get_config = common.get_config
 
@@ -453,8 +457,13 @@ def main():
         if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
         sys.exit(0)
     
+    def wake_handler(sig, frame):
+        logger.info("Wake signal received")
+        wake_event.set()
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGUSR1, wake_handler)
     set_cursor(False)
     clear_console()
 
@@ -529,7 +538,9 @@ def main():
                 if not was_blanked:
                     logger.info(f"Schedule: Entering OFF hours ({now.hour})")
                     set_screen_state(False); was_blanked = True
-                time.sleep(10); continue
+                wake_event.wait(10)
+                wake_event.clear()
+                continue
             else:
                 if was_blanked:
                     logger.info(f"Schedule: Entering ON hours ({now.hour}) or Manual Override or Schedule Disabled")
@@ -709,7 +720,8 @@ def main():
                 last_minute = now.minute
             
             sleep_time = 30 if WEAK_MACHINE else 1
-            time.sleep(sleep_time)
+            wake_event.wait(sleep_time)
+            wake_event.clear()
 
 if __name__ == "__main__":
     main()
