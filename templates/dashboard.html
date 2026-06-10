@@ -87,6 +87,9 @@
                 <div class="btn-row" style="margin-top: 10px;">
                     <button style="background: #e67e22;" onclick="navigate('next-group')">Next Group &raquo;</button>
                 </div>
+                <div class="btn-row" style="margin-top: 10px;">
+                    <button id="btn-remove" style="background: #e74c3c; display: none;" onclick="removeCurrentImage()">Remove Current Image</button>
+                </div>
             </div>
 
             <div class="action-group">
@@ -141,6 +144,26 @@
             }
         }
 
+        let currentImagePath = "";
+
+        async function removeCurrentImage() {
+            if (!currentImagePath) return;
+            if (!confirm(`Are you sure you want to remove the image: ${currentImagePath}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/remove`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: currentImagePath.split('/').pop(), path: currentImagePath })
+                });
+                if (!response.ok) throw new Error('Failed to remove image');
+                alert("Image removed successfully.");
+                updateStatus();
+            } catch (e) {
+                alert("Error removing image: " + e.message);
+            }
+        }
+
         async function updateStatus() {
             try {
                 const response = await fetch(`${API_BASE}/state`);
@@ -149,27 +172,35 @@
                 const info = document.getElementById('display-info');
                 const preview = document.getElementById('display-preview');
                 const link = document.getElementById('full-image-link');
+                const removeBtn = document.getElementById('btn-remove');
 
                 if (state.error) {
                     info.textContent = "System Status: " + state.error;
                     preview.style.display = "none";
                     link.style.display = "none";
+                    removeBtn.style.display = "none";
                     return;
                 }
 
                 if (state.current_image && state.current_image !== "Clock" && state.current_image !== "Idle") {
+                    currentImagePath = state.current_image;
                     info.textContent = (state.type === "clock" ? "Clock Overlay on: " : "") + state.current_image;
                     preview.style.display = "block";
                     preview.src = `/api/image/${state.current_image}?t=${Date.now()}`;
                     link.style.display = "inline-block";
+                    removeBtn.style.display = "block";
                 } else if (state.type === "clock") {
+                    currentImagePath = "";
                     info.textContent = "Displaying Clock";
                     preview.style.display = "none";
                     link.style.display = "none";
+                    removeBtn.style.display = "none";
                 } else {
+                    currentImagePath = "";
                     info.textContent = "System Idle";
                     preview.style.display = "none";
                     link.style.display = "none";
+                    removeBtn.style.display = "none";
                 }
             } catch (e) {
                 document.getElementById('display-info').textContent = "Error connecting to API";
