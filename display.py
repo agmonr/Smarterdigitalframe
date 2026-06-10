@@ -520,50 +520,54 @@ def main():
 
             except: pass
             
-            # Check for manual screen override
-            is_manually_off = os.path.exists("manual_off.tmp")
-            
-            # Determine schedule state
-            now = datetime.now()
-            in_off_hours = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
-            
-            # Logic: If manual OFF, keep OFF. Else, follow schedule.
-            should_be_on = not (is_manually_off or in_off_hours)
-            
-            # Update screen state if it doesn't match requirement
-            if should_be_on and was_blanked:
-                set_screen_state(True)
-                was_blanked = False
-            elif not should_be_on and not was_blanked:
-                set_screen_state(False)
-                was_blanked = True
-
-            now = datetime.now()
-            
-            # 1. Schedule check
+            # 1. Determine desired screen state
             config = get_config()
             schedule_enabled = config.getboolean('SCHEDULE', 'enabled', fallback=False)
             in_off_hours = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
+            is_manually_off = os.path.exists("manual_off.tmp")
+            is_manually_on = os.path.exists("manual_on.tmp")
             
-            # Manual override check
-            manual_on = os.path.exists("manual_on.tmp")
+            # Priority: 1. Manual OFF, 2. Manual ON, 3. Schedule
+            if is_manually_off:
+                should_be_on = False
+            elif is_manually_on:
+                should_be_on = True
+            elif schedule_enabled:
+                should_be_on = not in_off_hours
+            else:
+                # Default to ON if no schedule/manual override
+                should_be_on = True
 
-            if schedule_enabled and in_off_hours and not manual_on:
-                if not was_blanked:
-                    logger.info(f"Schedule: Entering OFF hours ({now.hour})")
-                    set_screen_state(False); was_blanked = True
-                wake_event.wait(10)
+            # 2. Update screen state if it doesn't match requirement
+            if should_be_on and was_blanked:
+                logger.info("Screen logic: Turning ON")
+                set_screen_state(True)
+                was_blanked = False
+                last_display_time = 0 # Force refresh
+            elif not should_be_on and not was_blanked:
+                logger.info("Screen logic: Turning OFF")
+                set_screen_state(False)
+                was_blanked = True
+
+            # 3. Hardware state sync (only if not already blanked by our logic)
+            # This handles if something else turned the screen ON/OFF
+            try:
+                current_hw_state = common.get_hardware_screen_state()
+                hw_on = (current_hw_state == 'on')
+                if hw_on and was_blanked:
+                    logger.info("Hardware: Screen turned ON externally - forcing refresh")
+                    was_blanked = False
+                    last_display_time = 0
+                elif current_hw_state == 'off' and not was_blanked:
+                    # If hardware turned off, respect it but don't force it back on unless needed
+                    was_blanked = True
+            except: pass
+
+            if not should_be_on:
+                # If we are supposed to be off, sleep longer and skip refresh logic
+                wake_event.wait(5)
                 wake_event.clear()
                 continue
-            else:
-                if was_blanked:
-                    logger.info(f"Schedule: Entering ON hours ({now.hour}) or Manual Override or Schedule Disabled")
-                    set_screen_state(True); was_blanked = False
-                    last_display_time = 0 # Force refresh immediately
-                
-                # If we are in off hours but it's a manual override, don't sleep for 10s
-                # just continue to the rest of the loop logic.
-                pass
 
             # Check for navigation commands (Move here for better responsiveness)
             if os.path.exists("show_image.tmp"):
@@ -630,20 +634,6 @@ def main():
                     last_display_time = time.time()
                     last_rotation_time = time.time()
 
-            # 2. Hardware state sync (only if not already blanked by schedule)
-            try:
-                res = subprocess.run(['vcgencmd', 'display_power'], capture_output=True, text=True)
-                is_on = 'display_power=1' in res.stdout
-                if is_on and was_blanked:
-                    # This handles if something else turned the screen ON
-                    logger.info("Hardware: Screen turned ON externally - forcing refresh")
-                    was_blanked = False
-                    last_display_time = 0
-                elif not is_on and not was_blanked:
-                    # This handles if something else turned the screen OFF
-                    was_blanked = True
-            except: pass
-
             # Hourly/Periodic/Scheduled clock check
             is_periodic = SHOW_PERIODIC and ((0 <= now.minute < 3) or (30 <= now.minute < 33))
             
@@ -708,7 +698,10 @@ def main():
 
             # Logic for when to refresh display
             should_refresh = False
-            if was_periodic and not (is_periodic or is_scheduled):
+            if was_blanked:
+                # If screen is OFF, we don't refresh anything
+                should_refresh = False
+            elif was_periodic and not (is_periodic or is_scheduled):
                 should_refresh = True
                 was_periodic = False
             elif time.time() - last_rotation_time >= INTERVAL:
