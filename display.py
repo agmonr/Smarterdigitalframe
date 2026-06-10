@@ -405,20 +405,28 @@ def is_hour_in_range(hour, start, end):
 def get_random_image_index(images):
     if not images:
         return 0
-    
+
     # Try up to 5 times to find an image not shown in the last 24 hours
     recent_paths = common.get_recent_paths(days=1)
-    
-    new_idx = random.randint(0, len(images) - 1)
-    for _ in range(5):
-        new_idx = random.randint(0, len(images) - 1)
-        rel_path = os.path.relpath(images[new_idx], common.PROJECT_ROOT)
-        if rel_path not in recent_paths:
-            return new_idx
-    
-    # If still in history after 5 tries, just return the last random one chosen
-    return new_idx
 
+    # Pre-calculate relative paths for comparison to avoid repeated os.path.relpath calls
+    # but only if we have a reasonable number of images to avoid overhead.
+
+    indices = list(range(len(images)))
+    random.shuffle(indices)
+
+    # Try to find a 'new' one from the shuffled list
+    for i in range(min(len(indices), 10)):
+        idx = indices[i]
+        try:
+            rel_path = os.path.relpath(images[idx], common.PROJECT_ROOT)
+            if rel_path not in recent_paths:
+                return idx
+        except:
+            pass
+
+    # If all recently shown or too many failed tries, just return the first random one
+    return indices[0] if indices else 0
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
         return 0, 0
@@ -494,15 +502,21 @@ def main():
                     last_rotation_time = 0
                     if IMAGE_DIR != old_image_dir or SELECTED_FOLDERS != old_selected:
                         images = get_images()
-                        images.sort(); idx = 0; images_shown_in_group = 0
+                        images.sort()
+                        idx = get_random_image_index(images)
+                        images_shown_in_group = 0
                 
                 # Check for new images
                 current_dir_mtime = os.path.getmtime(IMAGE_DIR)
                 if current_dir_mtime > dir_mtime:
                     dir_mtime = current_dir_mtime
+                    old_len = len(images)
                     images = get_images()
                     images.sort()
-                    logger.info("New images detected, refreshed list.")
+                    logger.info(f"New images detected, refreshed list. Count: {len(images)}")
+                    if len(images) != old_len:
+                        idx = get_random_image_index(images)
+                        images_shown_in_group = 0
 
             except: pass
             
