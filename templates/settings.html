@@ -182,6 +182,11 @@
                 <label>Capture Schedule (Cron)</label>
                 <input type="text" id="camera-schedule" placeholder="0 0-6 * * *">
             </div>
+            <div class="form-group">
+                <label>Motion Timeout (seconds)</label>
+                <input type="number" id="motion-timeout" min="10">
+                <div class="info-text">How long to keep the screen on after motion is detected.</div>
+            </div>
 
             <h2>Proximity Detection (BLE)</h2>
             <div class="form-group">
@@ -286,6 +291,9 @@
                 document.getElementById('camera-resolution').value = cameraConfig.video_resolution || '1024x768';
                 document.getElementById('camera-schedule').value = cameraConfig.schedule || '0 0-6 * * *';
 
+                const motionConfig = config.MOTION || {};
+                document.getElementById('motion-timeout').value = motionConfig.timeout || 300;
+
                 const networkConfig = config.NETWORK || {};
                 document.getElementById('ap-name').value = networkConfig.ap_name || 'dframe';
                 document.getElementById('ap-password').value = networkConfig.ap_password || 'DigitalFrame';
@@ -330,6 +338,9 @@
                     enabled: document.getElementById('camera-enabled').value,
                     video_resolution: document.getElementById('camera-resolution').value,
                     schedule: document.getElementById('camera-schedule').value
+                },
+                MOTION: {
+                    timeout: document.getElementById('motion-timeout').value
                 },
                 NETWORK: {
                     ap_name: document.getElementById('ap-name').value,

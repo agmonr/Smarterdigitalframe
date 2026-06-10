@@ -54,10 +54,6 @@
                 <input type="range" id="sensitivity" min="1" max="100" value="50" oninput="document.getElementById('sensitivity-val').innerText = this.value">
                 <small>Current Effective Sensitivity: <span id="current-sensitivity">50</span></small>
             </div>
-            <div class="form-group">
-                <label for="timeout">Screen Timeout (seconds):</label>
-                <input type="number" id="timeout" min="10" value="300">
-            </div>
             <hr>
             <h4>Advanced (Low Light)</h4>
             <div class="form-group">
@@ -112,7 +108,6 @@
                     document.getElementById('sensitivity').value = data.sensitivity;
                     document.getElementById('sensitivity-val').innerText = data.sensitivity;
                     document.getElementById('current-sensitivity').innerText = data.effective_sensitivity;
-                    document.getElementById('timeout').value = data.timeout;
                     document.getElementById('shutter').value = data.shutter || 0;
                     document.getElementById('gain').value = data.gain || 0;
                     const configRes = await fetch('/api/config');
@@ -134,7 +129,6 @@
                 enabled: document.getElementById('motion-enabled').checked,
                 auto_sensitivity: document.getElementById('auto-sensitivity').checked,
                 sensitivity: parseInt(document.getElementById('sensitivity').value),
-                timeout: parseInt(document.getElementById('timeout').value),
                 shutter: parseInt(document.getElementById('shutter').value),
                 gain: parseInt(document.getElementById('gain').value)
             };
