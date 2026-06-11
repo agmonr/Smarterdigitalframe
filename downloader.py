@@ -184,34 +184,38 @@ def download_album(album_id, url, output_dir, force_fast=False):
             update_album_status(album_id, f"Error: HTTP {response.status_code}")
             return False
 
-        image_patterns = [
-            r'https://lh3\.googleusercontent\.com/[a-zA-Z0-9_-]+',
-            r'https://photos\.google\.com/share/[a-zA-Z0-9_-]+/photo/[a-zA-Z0-9_-]+'
-        ]
-        
         found_urls = set()
-        for pattern in image_patterns:
-            matches = re.findall(pattern, response.text)
-            found_urls.update(matches)
+        # Use finditer to check context around each URL
+        all_text = response.text
+        
+        # Combine patterns into one for context checking
+        combined_pattern = r'(https://lh3\.googleusercontent\.com/[a-zA-Z0-9_-]+|https://photos\.google\.com/share/[a-zA-Z0-9_-]+/photo/[a-zA-Z0-9_-]+)'
+        
+        video_context_markers = ['video', 'duration', '.mp4', '.mov', '.avi', '.mkv', 'is_video', 'video_id']
+        
+        for match in re.finditer(combined_pattern, all_text):
+            img_url = match.group(1)
             
-        json_urls = re.findall(r'\"(https://lh3\.googleusercontent\.com/[^\"]+)\"', response.text)
-        found_urls.update(json_urls)
+            # Extract 200 chars around the match to check for video markers
+            start_ctx = max(0, match.start() - 200)
+            end_ctx = min(len(all_text), match.end() + 200)
+            context = all_text[start_ctx:end_ctx].lower()
+            
+            is_video = any(marker in context for marker in video_context_markers)
+            if is_video:
+                logger.debug(f"Skipping potential video content: {img_url[:50]}... (found video marker in context)")
+                continue
+                
+            found_urls.add(img_url)
         
         # Filter: 
         # 1. Must be long enough to be a real photo ID
         # 2. Must not be a known UI element
-        # 3. Must NOT be a video (Google Photos video URLs often contain video markers)
         unique_images = []
-        video_markers = ['/video', '.mp4', '.mov', '.avi', '.mkv']
         for img in found_urls:
             if len(img.split('/')[-1]) < 60: continue
             if 'googleusercontent.com' not in img: continue
             
-            # Exclude known video markers in the URL
-            is_video = any(marker in img.lower() for marker in video_markers)
-            if is_video:
-                continue
-                
             if img not in unique_images:
                 unique_images.append(img)
                 
