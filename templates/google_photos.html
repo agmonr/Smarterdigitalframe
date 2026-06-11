@@ -47,6 +47,11 @@
         .help-text { font-size: 13px; color: #7f8c8d; margin-top: 5px; }
         .album-link { color: #3498db; text-decoration: none; }
         .album-link:hover { text-decoration: underline; }
+
+        /* Sync & Storage Guardrail Styles */
+        .card { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-top: 30px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #3498db; }
     </style>
 </head>
 <body>
@@ -94,6 +99,24 @@
                 <input type="text" id="album-url" placeholder="https://photos.app.goo.gl/...">
             </div>
             <button class="btn btn-primary" onclick="addAlbum()">Add Album</button>
+        </div>
+
+        <!-- Sync & Storage Guardrail Mirrored Section -->
+        <div class="card" style="border-left: 5px solid #e67e22;">
+            <h3>Sync & Storage Guardrail</h3>
+            <div class="grid">
+                <div>
+                    <strong>Active Operation:</strong> <span id="sync-op">Idle</span><br>
+                    <small id="sync-msg">No active sync</small>
+                </div>
+                <div>
+                    <strong>Free Space:</strong> <span id="free-space">--</span> GB<br>
+                    <div style="width: 100%; background: #eee; height: 10px; border-radius: 5px; margin-top: 5px;">
+                        <div id="space-bar" style="width: 0%; background: #2ecc71; height: 100%; border-radius: 5px; transition: width 0.5s;"></div>
+                    </div>
+                    <small>1GB Buffer Threshold</small>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -173,6 +196,21 @@
                     `;
                     tbody.appendChild(tr);
                 });
+
+                // Fetch and Update Sync Status (Mirrored from status.html)
+                const syncResponse = await fetch(`${API_BASE}/sync/status`);
+                const syncData = await syncResponse.json();
+                
+                document.getElementById('sync-op').textContent = syncData.operation || 'Idle';
+                document.getElementById('sync-msg').textContent = syncData.message || '';
+                document.getElementById('free-space').textContent = syncData.free_space_gb ? syncData.free_space_gb.toFixed(2) : '--';
+                
+                if (syncData.free_space_gb) {
+                    const percent = Math.min(100, (syncData.free_space_gb / 10.0) * 100); // Scale to 10GB for visualization
+                    const bar = document.getElementById('space-bar');
+                    bar.style.width = percent + '%';
+                    bar.style.background = syncData.free_space_gb < 1.0 ? '#e74c3c' : (syncData.free_space_gb < 2.0 ? '#f1c40f' : '#2ecc71');
+                }
             } catch (e) {
                 console.error("Error loading albums", e);
             }
