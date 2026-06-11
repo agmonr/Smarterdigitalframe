@@ -709,6 +709,19 @@ def run_command():
 import psutil
 import shutil
 
+def get_dir_size_mb(path):
+    total = 0
+    if os.path.exists(path):
+        try:
+            for root, dirs, files in os.walk(path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    if not os.path.islink(fp):
+                        total += os.path.getsize(fp)
+        except:
+            pass
+    return round(total / (2**20), 2)
+
 @app.route('/api/sync/status', methods=['GET'])
 def get_sync_status():
     sync_status_path = common.SYNC_STATUS_FILE
@@ -716,7 +729,18 @@ def get_sync_status():
         try:
             with open(sync_status_path, 'r') as f:
                 status = json.load(f)
-            
+
+            # Add storage breakdown
+            image_dir = common.get_image_dir()
+            google_photos_dir = os.path.join(image_dir, 'google_photos')
+
+            gp_size = get_dir_size_mb(google_photos_dir)
+            total_size = get_dir_size_mb(image_dir)
+            local_size = max(0, round(total_size - gp_size, 2))
+
+            status["google_photos_size_mb"] = gp_size
+            status["local_folders_size_mb"] = local_size
+
             # Add "Next Up" info based on current playback
             current_album_id = None
             if os.path.exists(STATE_FILE):

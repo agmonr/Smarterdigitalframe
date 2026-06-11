@@ -111,8 +111,19 @@
                 </div>
                 <div>
                     <strong>Free Space:</strong> <span id="free-space">--</span> GB<br>
-                    <div style="width: 100%; background: #eee; height: 10px; border-radius: 5px; margin-top: 5px;">
-                        <div id="space-bar" style="width: 0%; background: #2ecc71; height: 100%; border-radius: 5px; transition: width 0.5s;"></div>
+                    <div style="width: 100%; background: #eee; height: 12px; border-radius: 6px; margin-top: 5px; display: flex; overflow: hidden; border: 1px solid #ddd;">
+                        <div id="gp-space-bar" style="width: 0%; background: #3498db; height: 100%; transition: width 0.5s;" title="Google Photos"></div>
+                        <div id="local-space-bar" style="width: 0%; background: #f1c40f; height: 100%; transition: width 0.5s;" title="Local Folders"></div>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; font-size: 11px;">
+                        <span style="display: flex; align-items: center; gap: 4px;">
+                            <span style="display:inline-block; width:10px; height:10px; background:#3498db; border-radius:2px;"></span> 
+                            Google: <span id="gp-size-text">--</span> MB
+                        </span>
+                        <span style="display: flex; align-items: center; gap: 4px;">
+                            <span style="display:inline-block; width:10px; height:10px; background:#f1c40f; border-radius:2px;"></span> 
+                            Local: <span id="local-size-text">--</span> MB
+                        </span>
                     </div>
                     <small>1GB Buffer Threshold</small>
                 </div>
@@ -205,11 +216,30 @@
                 document.getElementById('sync-msg').textContent = syncData.message || '';
                 document.getElementById('free-space').textContent = syncData.free_space_gb ? syncData.free_space_gb.toFixed(2) : '--';
                 
-                if (syncData.free_space_gb) {
-                    const percent = Math.min(100, (syncData.free_space_gb / 10.0) * 100); // Scale to 10GB for visualization
-                    const bar = document.getElementById('space-bar');
-                    bar.style.width = percent + '%';
-                    bar.style.background = syncData.free_space_gb < 1.0 ? '#e74c3c' : (syncData.free_space_gb < 2.0 ? '#f1c40f' : '#2ecc71');
+                if (syncData.free_space_gb !== undefined) {
+                    const gpSize = syncData.google_photos_size_mb || 0;
+                    const localSize = syncData.local_folders_size_mb || 0;
+                    
+                    document.getElementById('gp-size-text').textContent = gpSize.toFixed(1);
+                    document.getElementById('local-size-text').textContent = localSize.toFixed(1);
+                    
+                    // Show usage relative to a 10GB scale
+                    const scaleMB = 10 * 1024; 
+                    const gpPercent = (gpSize / scaleMB) * 100;
+                    const localPercent = (localSize / scaleMB) * 100;
+                    
+                    document.getElementById('gp-space-bar').style.width = gpPercent + '%';
+                    document.getElementById('local-space-bar').style.width = localPercent + '%';
+                    
+                    // Warn if overall free space is low
+                    const barContainer = document.getElementById('gp-space-bar').parentElement;
+                    if (syncData.free_space_gb < 1.0) {
+                        barContainer.style.borderColor = '#e74c3c';
+                        document.getElementById('free-space').style.color = '#e74c3c';
+                    } else {
+                        barContainer.style.borderColor = '#ddd';
+                        document.getElementById('free-space').style.color = '';
+                    }
                 }
             } catch (e) {
                 console.error("Error loading albums", e);

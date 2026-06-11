@@ -25,6 +25,7 @@ To ensure your frame is a good neighbor on your home network and respects your d
 ## ☁️ Cloud & Storage Management
 We protect your device from running out of storage, which can cause system failures.
 
+- **Storage Breakdown Visualization:** The dashboard provides a real-time, color-coded breakdown of photo storage usage, distinguishing between Google Photos (Blue) and Local Folders (Yellow). This gives users immediate visibility into what is occupying their disk space.
 - **1GB Safety Buffer:** The system enforces a strict 1GB free-space safety buffer on your SD card.
 - **FIFO Granular Eviction:** When storage is low, the frame doesn't wipe whole folders. It intelligently removes only the oldest downloaded images until the safety buffer is restored, ensuring you have the maximum number of images possible without risking disk-full errors.
 - **Playback-Aware Cleanup:** The eviction engine is fully aware of the currently displayed image, guaranteeing it will never delete the photo you are actively watching.
