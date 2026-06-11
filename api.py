@@ -222,49 +222,19 @@ def capture_image():
 
 # Google Photos Sync Thread
 def google_photos_sync_thread():
-    print('Google Photos sync thread started')
-    last_sync_time = 0
+    print('Google Photos sync thread started (Hourly Sync)')
     while True:
         try:
-            # 1. Determine currently playing album
-            current_album_id = None
-            if os.path.exists(STATE_FILE):
-                try:
-                    with open(STATE_FILE, 'r') as f:
-                        state = json.load(f)
-                        current_img = state.get('current_image', '')
-                        if 'google_photos/' in current_img:
-                            current_album_id = current_img.split('google_photos/')[1].split('/')[0]
-                except:
-                    pass
-
-            # 2. Find next album in queue
-            albums = downloader.get_albums()
-            if albums:
-                next_album = None
-                if current_album_id:
-                    # Find index of current album
-                    for i, album in enumerate(albums):
-                        if album['id'] == current_album_id or os.path.basename(album['path']) == current_album_id:
-                            next_album = albums[(i + 1) % len(albums)]
-                            break
-                
-                if not next_album:
-                    next_album = albums[0]
-
-                # 3. Sync the "next" album
-                # We sync it if it's been a while since the last global sync, 
-                # OR if we want to ensure the next one is always ready.
-                # Let's sync one album every cycle to keep it "pipelined".
-                downloader.download_album(next_album['id'], next_album['url'], next_album['path'])
+            print(f'Starting hourly full sync at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+            # Perform a full sync of all albums. 
+            # force_fast=False ensures bandwidth limits are enforced (4MB/s cap).
+            downloader.sync_all(force_fast=False)
             
-            # 4. Wait before next check. Pipelining means we stay ahead of playback.
-            # If a group is 20 images and interval is 10s, that's 200s per group.
-            # Checking every 60s is plenty.
-            time.sleep(60)
+            print(f'Hourly sync complete. Sleeping for 1 hour...')
+            time.sleep(3600)
         except Exception as e:
             print(f'Auto-sync error: {e}')
-            time.sleep(60)
+            time.sleep(600) # Wait 10 minutes before retrying on error
 
 def get_avg_light(frame):
     return np.mean(frame)

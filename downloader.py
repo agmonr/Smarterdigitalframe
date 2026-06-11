@@ -312,14 +312,19 @@ def download_album(album_id, url, output_dir, force_fast=False):
             count += 1
         
         # Cleanup orphaned files (no longer in album or old naming style)
-        for f in os.listdir(output_dir):
-            if f.lower().endswith(('.jpg', '.jpeg', '.png')) and f not in verified_filenames:
-                orphaned_path = os.path.join(output_dir, f)
-                try:
-                    os.remove(orphaned_path)
-                    logger.info(f"Cleaned up orphaned image: {f}")
-                except Exception as e:
-                    logger.error(f"Error cleaning up orphaned image {f}: {e}")
+        # SAFETY: Only perform cleanup if we actually found images in the cloud. 
+        # If 0 images found, it's likely a scraping failure, so we skip cleanup to protect local files.
+        if unique_images:
+            for f in os.listdir(output_dir):
+                if f.lower().endswith(('.jpg', '.jpeg', '.png')) and f not in verified_filenames:
+                    orphaned_path = os.path.join(output_dir, f)
+                    try:
+                        os.remove(orphaned_path)
+                        logger.info(f"Cleaned up orphaned image: {f}")
+                    except Exception as e:
+                        logger.error(f"Error cleaning up orphaned image {f}: {e}")
+        else:
+            logger.warning(f"No images found in cloud for album {album_id}. Skipping cleanup to protect local files.")
 
         final_files = [f for f in os.listdir(output_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         total_in_dir = len(final_files)

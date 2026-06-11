@@ -162,7 +162,7 @@
                         <td>
                             <strong><a href="${album.url}" target="_blank" class="album-link">${album.id}</a></strong>
                         </td>
-                        <td><code>${album.path}</code></td>
+                        <td><code>${album.path.replace('google_photos/', '')}</code></td>
                         <td>
                             <span class="status-badge ${statusClass}">${statusText}</span>
                             ${extraInfo}
