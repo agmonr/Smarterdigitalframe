@@ -498,6 +498,14 @@ def update_config():
 
     with open(CONFIG_FILE, 'w') as f:
         config.write(f)
+
+    # Dynamically apply proximity scanner state
+    if 'PROXIMITY' in data and proximity_scanner:
+        if config.getboolean('PROXIMITY', 'enabled', fallback=False):
+            proximity_scanner.start()
+        else:
+            proximity_scanner.stop()
+
     common.notify_display_process() # Notify to apply config without restart
     return jsonify({"status": "success", "message": "Configuration updated"})
 
