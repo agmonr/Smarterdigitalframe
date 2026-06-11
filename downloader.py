@@ -189,24 +189,32 @@ def download_album(album_id, url, output_dir, force_fast=False):
         all_text = response.text
         
         # Combine patterns into one for context checking
-        combined_pattern = r'(https://lh3\.googleusercontent\.com/[a-zA-Z0-9_-]+|https://photos\.google\.com/share/[a-zA-Z0-9_-]+/photo/[a-zA-Z0-9_-]+)'
+        # Support lh3, lh4, lh5, etc. and be broad with characters (until a quote or space)
+        combined_pattern = r'(https://lh[0-9]\.googleusercontent\.com/[^\s"\'\]]+|https://photos\.google\.com/share/[^\s"\'\]]+)'
         
-        video_context_markers = ['video', 'duration', '.mp4', '.mov', '.avi', '.mkv', 'is_video', 'video_id']
+        # More specific markers to avoid false positives with photos (which often have "is_video": false)
+        video_true_markers = ['"is_video":true', '[true,null,"video"]', 'video-downloads', 'video-preview']
+        # General markers that are rare near photos but common near videos
+        general_video_markers = ['duration', '.mp4', '.mov', '.avi', '.mkv']
         
         for match in re.finditer(combined_pattern, all_text):
             img_url = match.group(1)
             
-            # Extract 200 chars around the match to check for video markers
-            start_ctx = max(0, match.start() - 200)
-            end_ctx = min(len(all_text), match.end() + 200)
-            context = all_text[start_ctx:end_ctx].lower()
+            # Extract 100 chars around the match (reduced from 200 for fewer false positives)
+            start_ctx = max(0, match.start() - 100)
+            end_ctx = min(len(all_text), match.end() + 100)
+            context = all_text[start_ctx:end_ctx].lower().replace(' ', '') # remove spaces for easier matching
             
-            is_video = any(marker in context for marker in video_context_markers)
+            is_video = any(marker in context for marker in video_true_markers) or \
+                       any(marker in context for marker in general_video_markers)
+            
             if is_video:
                 logger.debug(f"Skipping potential video content: {img_url[:50]}... (found video marker in context)")
                 continue
                 
             found_urls.add(img_url)
+        
+        logger.info(f"Found {len(found_urls)} potential URLs in {album_id} before filtering.")
         
         # Filter: 
         # 1. Must be long enough to be a real photo ID
