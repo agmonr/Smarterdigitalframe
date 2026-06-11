@@ -824,7 +824,8 @@ def get_system_status():
             "free": mem.available // (2**20),
             "percent": mem.percent
         },
-        "ble_devices_in_range": presence_data["ble_devices_in_range"]
+        "ble_devices_in_range": presence_data["ble_devices_in_range"],
+        "ble_detailed_devices": proximity_scanner.get_detailed_devices() if proximity_scanner else []
     })
 
 @app.route('/system')

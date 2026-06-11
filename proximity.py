@@ -8,7 +8,7 @@ from bleak import BleakScanner
 import common
 
 # Tracking dictionary
-# {address: {"rssi_history": [], "first_seen": datetime, "last_seen": datetime}}
+# {address: {"rssi_history": [], "first_seen": datetime, "last_seen": datetime, "name": str, "is_dynamic": bool, "ignore_reason": str}}
 device_registry = {}
 
 class ProximityScanner:
@@ -21,7 +21,7 @@ class ProximityScanner:
         self.devices_in_range = 0
         self.logger = common.setup_logger('proximity', 'proximity.log')
 
-    def is_device_dynamic(self, addr, rssi, config):
+    def is_device_dynamic(self, addr, name, rssi, config):
         stable_threshold = config.getfloat('PROXIMITY', 'stable_threshold', fallback=0.5)
         min_samples = config.getint('PROXIMITY', 'min_samples', fallback=10)
         ignore_after_hours = config.getint('PROXIMITY', 'ignore_after_hours', fallback=2)
@@ -29,13 +29,23 @@ class ProximityScanner:
         now = datetime.now()
         
         if addr not in device_registry:
-            device_registry[addr] = {"rssi_history": [rssi], "first_seen": now, "last_seen": now}
+            device_registry[addr] = {
+                "rssi_history": [rssi], 
+                "first_seen": now, 
+                "last_seen": now, 
+                "name": name or "Unknown",
+                "is_dynamic": True,
+                "ignore_reason": ""
+            }
             return True
         
         device_registry[addr]["last_seen"] = now
+        if name: device_registry[addr]["name"] = name
         
         # Check hard limit
         if now - device_registry[addr]["first_seen"] > timedelta(hours=ignore_after_hours):
+            device_registry[addr]["is_dynamic"] = False
+            device_registry[addr]["ignore_reason"] = f"Seen > {ignore_after_hours}h"
             return False
         
         # Add new RSSI reading
@@ -46,8 +56,12 @@ class ProximityScanner:
         if len(history) >= min_samples:
             stdev = statistics.stdev(history)
             if stdev < stable_threshold:
+                device_registry[addr]["is_dynamic"] = False
+                device_registry[addr]["ignore_reason"] = "Stable signal (Static)"
                 return False
-                
+        
+        device_registry[addr]["is_dynamic"] = True
+        device_registry[addr]["ignore_reason"] = ""
         return True
 
     def ble_callback(self, device, advertisement_data):
@@ -57,9 +71,12 @@ class ProximityScanner:
                 return
 
             rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
+            # Update registry even if below threshold to keep track of devices in range vs out of range
+            is_dynamic = self.is_device_dynamic(device.address, device.name, advertisement_data.rssi, config)
+            
             if advertisement_data.rssi >= rssi_threshold:
-                if self.is_device_dynamic(device.address, advertisement_data.rssi, config):
-                    self.logger.debug(f"Dynamic Device Detected: {device.address} | RSSI: {advertisement_data.rssi}")
+                if is_dynamic:
+                    self.logger.debug(f"Dynamic Device Detected: {device.address} ({device.name}) | RSSI: {advertisement_data.rssi}")
                     self.callback_on_detection()
         except Exception as e:
             self.logger.error(f"Error in ble_callback: {e}")
@@ -92,9 +109,39 @@ class ProximityScanner:
             time_diff = (now - data["last_seen"]).total_seconds()
             last_rssi = data["rssi_history"][-1]
             if time_diff < 30:
-                if last_rssi >= rssi_threshold:
+                if last_rssi >= rssi_threshold and data.get("is_dynamic", True):
                     count += 1
         self.devices_in_range = count
+
+    def get_detailed_devices(self):
+        config = common.get_config()
+        rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
+        now = datetime.now()
+        detailed_list = []
+        
+        for addr, data in device_registry.items():
+            last_rssi = data["rssi_history"][-1]
+            time_diff = (now - data["last_seen"]).total_seconds()
+            
+            status = "Out of Range"
+            if time_diff < 30:
+                if not data.get("is_dynamic", True):
+                    status = "Ignored"
+                elif last_rssi < rssi_threshold:
+                    status = "Weak Signal"
+                else:
+                    status = "Active"
+            
+            detailed_list.append({
+                "address": addr,
+                "name": data.get("name", "Unknown"),
+                "rssi": last_rssi,
+                "status": status,
+                "ignore_reason": data.get("ignore_reason", ""),
+                "last_seen_sec": int(time_diff)
+            })
+            
+        return sorted(detailed_list, key=lambda x: x["rssi"], reverse=True)
 
     def cleanup_registry(self):
         now = datetime.now()
