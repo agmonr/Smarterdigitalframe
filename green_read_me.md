@@ -14,6 +14,7 @@ Static images on modern displays can cause permanent burn-in. DigitalFrame activ
 
 - **Frameblanking & HDMI Control:** The system utilizes `vcgencmd` to physically cut power to the HDMI output and blank the framebuffer during scheduled quiet hours, extending display life and saving energy.
 - **Proximity & Presence Awareness:** Using the camera and motion detection, the system detects when a room is empty and blanking the screen. This drastically reduces total powered-on hours without requiring manual intervention.
+- **Manual Device Exclusions:** The system allows users to manually "Ignore" specific Bluetooth MAC addresses from the dashboard. This prevents nearby static devices (like smart appliances or neighbor's phones) from accidentally keeping the screen on, further optimizing energy consumption.
 
 ## 🌐 Network & Bandwidth Conservation
 To ensure your frame is a good neighbor on your home network and respects your data usage.

@@ -55,4 +55,5 @@ stable_threshold = 0.5
 min_samples = 10
 ignore_after_hours = 2
 timeout = 300
+ignored_addresses = 
 

@@ -55,6 +55,7 @@
                             <th>Device</th>
                             <th>RSSI</th>
                             <th>Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="ble-table-body">
@@ -64,6 +65,24 @@
             </div>
         </div>
 
+        <script>
+            async function toggleIgnore(address) {
+                try {
+                    const res = await fetch('/api/proximity/toggle-ignore', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address: address })
+                    });
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        fetchStatus(); // Refresh immediately
+                    }
+                } catch (e) {
+                    console.error("Failed to toggle ignore", e);
+                }
+            }
+        </script>
+        
         <div class="card" style="border-left: 5px solid #e67e22;">
             <h3>Sync & Storage Guardrail</h3>
             <div class="grid">
@@ -192,6 +211,7 @@
                         else if (device.status === 'Weak Signal') statusClass = 'status-weak';
                         
                         const statusDisplay = device.status === 'Ignored' ? `Ignored (${device.ignore_reason})` : device.status;
+                        const isManuallyIgnored = device.ignore_reason === 'Manually Ignored';
                         
                         tr.innerHTML = `
                             <td>
@@ -203,6 +223,12 @@
                                 <div class="rssi-bar"><div class="rssi-fill" style="width: ${rssiPercent}%"></div></div>
                             </td>
                             <td><span class="${statusClass}">${statusDisplay}</span></td>
+                            <td>
+                                <button class="btn" style="padding: 4px 8px; font-size: 11px; background: ${isManuallyIgnored ? '#2ecc71' : '#e74c3c'}" 
+                                        onclick="toggleIgnore('${device.address}')">
+                                    ${isManuallyIgnored ? 'Unignore' : 'Ignore'}
+                                </button>
+                            </td>
                         `;
                         bleBody.appendChild(tr);
                     });

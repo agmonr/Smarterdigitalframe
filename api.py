@@ -516,6 +516,32 @@ def _restart_frame_process():
     except Exception as e:
         pass
 
+@app.route('/api/proximity/toggle-ignore', methods=['POST'])
+def toggle_proximity_ignore():
+    data = request.json
+    address = data.get('address', '').strip().upper()
+    if not address:
+        return jsonify({"error": "No address provided"}), 400
+    
+    config = get_config()
+    current_ignored = config.get('PROXIMITY', 'ignored_addresses', fallback='').split(',')
+    current_ignored = [a.strip().upper() for a in current_ignored if a.strip()]
+    
+    if address in current_ignored:
+        current_ignored.remove(address)
+        action = "removed"
+    else:
+        current_ignored.append(address)
+        action = "added"
+    
+    config.set('PROXIMITY', 'ignored_addresses', ','.join(current_ignored))
+    with open(CONFIG_FILE, 'w') as f:
+        config.write(f)
+    
+    # Notify changes
+    common.notify_display_process()
+    return jsonify({"status": "success", "action": action, "address": address})
+
 @app.route('/api/restart', methods=['POST'])
 def restart_frame():
     restart_thread = threading.Thread(target=_restart_frame_process)

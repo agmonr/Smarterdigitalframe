@@ -25,6 +25,8 @@ class ProximityScanner:
         stable_threshold = config.getfloat('PROXIMITY', 'stable_threshold', fallback=0.5)
         min_samples = config.getint('PROXIMITY', 'min_samples', fallback=10)
         ignore_after_hours = config.getint('PROXIMITY', 'ignore_after_hours', fallback=2)
+        ignored_list = config.get('PROXIMITY', 'ignored_addresses', fallback='').split(',')
+        ignored_list = [a.strip().upper() for a in ignored_list if a.strip()]
         
         now = datetime.now()
         
@@ -37,11 +39,21 @@ class ProximityScanner:
                 "is_dynamic": True,
                 "ignore_reason": ""
             }
-            return True
+            # Initial check for manual ignore
+            if addr.upper() in ignored_list:
+                device_registry[addr]["is_dynamic"] = False
+                device_registry[addr]["ignore_reason"] = "Manually Ignored"
+            return device_registry[addr]["is_dynamic"]
         
         device_registry[addr]["last_seen"] = now
         if name: device_registry[addr]["name"] = name
         
+        # Check manual ignore first
+        if addr.upper() in ignored_list:
+            device_registry[addr]["is_dynamic"] = False
+            device_registry[addr]["ignore_reason"] = "Manually Ignored"
+            return False
+
         # Check hard limit
         if now - device_registry[addr]["first_seen"] > timedelta(hours=ignore_after_hours):
             device_registry[addr]["is_dynamic"] = False
