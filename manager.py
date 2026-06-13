@@ -32,6 +32,10 @@ def folders_page():
 def settings_page():
     return render_template('settings.html')
 
+@app.route('/proximity')
+def proximity_page():
+    return render_template('ble_proximity.html')
+
 @app.route('/system')
 def system_status_page():
     return render_template('status.html')

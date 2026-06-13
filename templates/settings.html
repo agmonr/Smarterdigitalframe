@@ -34,6 +34,11 @@
             margin-top: 15px;
             width: 100%;
         }
+
+        /* Toast notification */
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #2ecc71; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 500; opacity: 0; transition: opacity 0.3s; z-index: 9999; }
+        .toast.show { opacity: 1; }
+        .toast.error { background: #e74c3c; }
         
         @media (max-width: 600px) {
             body { padding: 10px; }
@@ -53,21 +58,21 @@
             <h2>General Display</h2>
             <div class="form-group">
                 <label>Image Directory</label>
-                <input type="text" id="image-dir" placeholder="images/">
+                <input type="text" id="image-dir" placeholder="images/" onchange="saveConfig()">
                 <div class="info-text">Full path to the folder containing your photos.</div>
             </div>
             <div class="form-group">
                 <label>Interval (seconds)</label>
-                <input type="number" id="interval">
+                <input type="number" id="interval" onchange="saveConfig()">
                 <div class="info-text">How long to show each image.</div>
             </div>
             <div class="form-group">
                 <label>Group Size</label>
-                <input type="number" id="group-size">
+                <input type="number" id="group-size" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Weak Machine Mode</label>
-                <select id="weak-machine">
+                <select id="weak-machine" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
@@ -75,55 +80,55 @@
             </div>
             <div class="form-group">
                 <label>History Retention (Days)</label>
-                <input type="number" id="history-retention-days" min="1" max="365">
+                <input type="number" id="history-retention-days" min="1" max="365" onchange="saveConfig()">
                 <div class="info-text">How many days to keep image display history in the database.</div>
             </div>
 
             <h2>Clock Overlay</h2>
             <div class="form-group">
                 <label>Show Time</label>
-                <select id="show-time">
+                <select id="show-time" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Periodic Clock (00 & 30 min)</label>
-                <select id="periodic-clock">
+                <select id="periodic-clock" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Scheduled Clock (Cron Style)</label>
-                <select id="scheduled-clock">
+                <select id="scheduled-clock" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Clock Schedule 1 (Cron)</label>
-                <input type="text" id="clock-schedule-1" placeholder="0 * * * *">
+                <input type="text" id="clock-schedule-1" placeholder="0 * * * *" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Clock Schedule 2 (Cron)</label>
-                <input type="text" id="clock-schedule-2" placeholder="30 * * * *">
+                <input type="text" id="clock-schedule-2" placeholder="30 * * * *" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Negative Time (Invert Colors)</label>
-                <select id="negative-time">
+                <select id="negative-time" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Clock Transparency (0-255)</label>
-                <input type="range" id="time-alpha" min="0" max="255" value="255" oninput="document.getElementById('alpha-val').textContent = this.value">
+                <input type="range" id="time-alpha" min="0" max="255" value="255" oninput="document.getElementById('alpha-val').textContent = this.value" onchange="saveConfig()">
                 <span id="alpha-val">255</span>
             </div>
             <div class="form-group">
                 <label>Time Location</label>
-                <select id="time-location">
+                <select id="time-location" onchange="saveConfig()">
                     <option value="top-left">Top Left</option>
                     <option value="top-right">Top Right</option>
                     <option value="bottom-left">Bottom Left</option>
@@ -133,42 +138,50 @@
             </div>
             <div class="form-group">
                 <label>Time Font Size</label>
-                <input type="number" id="time-font-size">
+                <input type="number" id="time-font-size" onchange="saveConfig()">
             </div>
             <div class="form-group color-group">
                 <label>Time Color</label>
-                <input type="color" id="time-color">
+                <input type="color" id="time-color" onchange="saveConfig()">
             </div>
             <div class="form-group color-group">
                 <label>Border Color</label>
-                <input type="color" id="time-border-color">
+                <input type="color" id="time-border-color" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Border Size (Line Width)</label>
-                <input type="number" id="time-border-size" min="0" max="20">
+                <input type="number" id="time-border-size" min="0" max="20" onchange="saveConfig()">
             </div>
 
             <h2>Screen Schedule</h2>
             <div class="form-group">
                 <label>Enable Screen Schedule</label>
-                <select id="schedule-enabled">
+                <select id="schedule-enabled" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
             </div>
             <div class="form-group">
                 <label>Screen OFF Hour (0-23)</label>
-                <input type="number" id="screen-off-hour" min="0" max="23">
+                <input type="number" id="screen-off-hour" min="0" max="23" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Screen ON Hour (0-23)</label>
-                <input type="number" id="screen-on-hour" min="0" max="23">
+                <input type="number" id="screen-on-hour" min="0" max="23" onchange="saveConfig()">
+            </div>
+            <div class="form-group">
+                <label>Screen OFF Hour 2 (0-23)</label>
+                <input type="number" id="screen-off-hour-2" min="0" max="23" onchange="saveConfig()">
+            </div>
+            <div class="form-group">
+                <label>Screen ON Hour 2 (0-23)</label>
+                <input type="number" id="screen-on-hour-2" min="0" max="23" onchange="saveConfig()">
             </div>
 
             <h2>Camera Settings</h2>
             <div class="form-group">
                 <label>Enable Camera</label>
-                <select id="camera-enabled">
+                <select id="camera-enabled" onchange="saveConfig()">
                     <option value="True">Enabled</option>
                     <option value="False">Disabled</option>
                 </select>
@@ -176,53 +189,28 @@
             </div>
             <div class="form-group">
                 <label>Camera Video Resolution</label>
-                <input type="text" id="camera-resolution" placeholder="1024x768">
+                <input type="text" id="camera-resolution" placeholder="1024x768" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Capture Schedule (Cron)</label>
-                <input type="text" id="camera-schedule" placeholder="0 0-6 * * *">
+                <input type="text" id="camera-schedule" placeholder="0 0-6 * * *" onchange="saveConfig()">
             </div>
             <div class="form-group">
                 <label>Motion Timeout (seconds)</label>
-                <input type="number" id="motion-timeout" min="10">
+                <input type="number" id="motion-timeout" min="10" onchange="saveConfig()">
                 <div class="info-text">How long to keep the screen on after motion is detected.</div>
-            </div>
-
-            <h2>Proximity Detection (BLE)</h2>
-            <div class="form-group">
-                <label>Enable Proximity Detection</label>
-                <select id="proximity-enabled">
-                    <option value="True">Enabled</option>
-                    <option value="False">Disabled</option>
-                </select>
-                <div class="info-text">Uses Bluetooth to detect nearby dynamic devices (phones).</div>
-            </div>
-            <div class="form-group">
-                <label>RSSI Threshold (dBm)</label>
-                <input type="number" id="proximity-rssi-threshold" min="-100" max="0">
-                <div class="info-text">Closer is higher (e.g., -75). Only devices above this are tracked.</div>
-            </div>
-            <div class="form-group">
-                <label>Stable Threshold (Std Dev)</label>
-                <input type="number" id="proximity-stable-threshold" step="0.1" min="0">
-                <div class="info-text">Lower is stricter (e.g., 0.5). Stationary devices have low variance.</div>
-            </div>
-            <div class="form-group">
-                <label>Timeout (seconds)</label>
-                <input type="number" id="proximity-timeout" min="10">
-                <div class="info-text">How long to keep the screen on after detection.</div>
             </div>
 
             <h2>Network Settings (Access Point)</h2>
             <div class="form-group">
                 <label>Default AP Name (SSID)</label>
-                <input type="text" id="ap-name" placeholder="dframe">
+                <input type="text" id="ap-name" placeholder="dframe" onchange="saveConfig()">
                 <div class="info-text">The SSID created when no WiFi connection is available.</div>
             </div>
             <div class="form-group">
                 <label>Default AP Password</label>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <input type="password" id="ap-password" placeholder="DigitalFrame" style="flex-grow: 1;">
+                    <input type="password" id="ap-password" placeholder="DigitalFrame" style="flex-grow: 1;" onchange="saveConfig()">
                     <div style="display: flex; align-items: center; white-space: nowrap; font-size: 14px;">
                         <input type="checkbox" id="toggle-ap-password" onchange="toggleApPassword()" style="width: auto; margin-right: 5px;">
                         <label for="toggle-ap-password" style="margin-bottom: 0; font-weight: normal; cursor: pointer;">Show</label>
@@ -231,13 +219,21 @@
                 <div class="info-text">Minimum 8 characters.</div>
             </div>
             
-            <button onclick="saveConfig()">Save Settings</button>
             <p class="info-text" style="text-align: center; margin-top: 15px;">Note: Significant changes may trigger a service restart.</p>
         </div>
     </div>
 
+    <div id="toast" class="toast"></div>
+
     <script>
         const API_BASE = "/api";
+
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (isError ? ' error' : '');
+            setTimeout(() => { t.className = 'toast'; }, 2500);
+        }
 
         function toggleApPassword() {
             const passwordInput = document.getElementById('ap-password');
@@ -282,6 +278,8 @@
                 document.getElementById('time-border-size').value = defaults.timebordersize || 2;
                 document.getElementById('screen-off-hour').value = defaults.screenoffhour || 22;
                 document.getElementById('screen-on-hour').value = defaults.screenonhour || 7;
+                document.getElementById('screen-off-hour-2').value = defaults.screenoffhour2 || 0;
+                document.getElementById('screen-on-hour-2').value = defaults.screenonhour2 || 0;
                 
                 const schedConfig = config.SCHEDULE || {};
                 document.getElementById('schedule-enabled').value = (schedConfig.enabled && schedConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
@@ -297,12 +295,6 @@
                 const networkConfig = config.NETWORK || {};
                 document.getElementById('ap-name').value = networkConfig.ap_name || 'dframe';
                 document.getElementById('ap-password').value = networkConfig.ap_password || 'DigitalFrame';
-
-                const proximityConfig = config.PROXIMITY || {};
-                document.getElementById('proximity-enabled').value = (proximityConfig.enabled && proximityConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
-                document.getElementById('proximity-rssi-threshold').value = proximityConfig.rssi_threshold || -75;
-                document.getElementById('proximity-stable-threshold').value = proximityConfig.stable_threshold || 0.5;
-                document.getElementById('proximity-timeout').value = proximityConfig.timeout || 300;
             } catch (e) {
                 console.error("Error loading config", e);
             }
@@ -329,7 +321,9 @@
                     timebordercolor: document.getElementById('time-border-color').value,
                     timebordersize: document.getElementById('time-border-size').value,
                     screenoffhour: document.getElementById('screen-off-hour').value,
-                    screenonhour: document.getElementById('screen-on-hour').value
+                    screenonhour: document.getElementById('screen-on-hour').value,
+                    screenoffhour2: document.getElementById('screen-off-hour-2').value,
+                    screenonhour2: document.getElementById('screen-on-hour-2').value
                 },
                 SCHEDULE: {
                     enabled: document.getElementById('schedule-enabled').value
@@ -345,12 +339,6 @@
                 NETWORK: {
                     ap_name: document.getElementById('ap-name').value,
                     ap_password: document.getElementById('ap-password').value
-                },
-                PROXIMITY: {
-                    enabled: document.getElementById('proximity-enabled').value,
-                    rssi_threshold: document.getElementById('proximity-rssi-threshold').value,
-                    stable_threshold: document.getElementById('proximity-stable-threshold').value,
-                    timeout: document.getElementById('proximity-timeout').value
                 }
             };
 
@@ -361,12 +349,12 @@
                     body: JSON.stringify(data)
                 });
                 if (response.ok) {
-                    alert("Settings saved successfully!");
+                    showToast("Settings saved successfully!");
                 } else {
-                    alert("Error saving settings.");
+                    showToast("Error saving settings.", true);
                 }
             } catch (e) {
-                alert("Error saving configuration");
+                showToast("Error saving configuration", true);
             }
         }
 

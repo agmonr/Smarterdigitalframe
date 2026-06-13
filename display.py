@@ -29,7 +29,7 @@ get_config = common.get_config
 def load_config_values():
     global IMAGE_DIR, INTERVAL, GROUP_SIZE, FB_DEV, COLOR_ORDER, LOG_LEVEL_STR, LOG_FILE
     global SHOW_TIME, TIME_FORMAT, TIME_FONT_SIZE, TIME_LOCATION, TIME_COLOR, TIME_BORDER_COLOR, TIME_BORDER_SIZE, NEG_TIME, TIME_ALPHA
-    global SHOW_HOURLY, SHOW_PERIODIC, SHOW_SCHEDULED, CLOCK_SCHEDULE_1, CLOCK_SCHEDULE_2, SCREEN_OFF_HOUR, SCREEN_ON_HOUR, SELECTED_FOLDERS, WEAK_MACHINE
+    global SHOW_HOURLY, SHOW_PERIODIC, SHOW_SCHEDULED, CLOCK_SCHEDULE_1, CLOCK_SCHEDULE_2, SCREEN_OFF_HOUR, SCREEN_ON_HOUR, SCREEN_OFF_HOUR_2, SCREEN_ON_HOUR_2, SELECTED_FOLDERS, WEAK_MACHINE
 
     config = common.get_config()
     PROJECT_ROOT = common.PROJECT_ROOT
@@ -69,6 +69,8 @@ def load_config_values():
 
     SCREEN_OFF_HOUR = config.getint('DEFAULT', 'screenoffhour', fallback=22)
     SCREEN_ON_HOUR = config.getint('DEFAULT', 'screenonhour', fallback=7)
+    SCREEN_OFF_HOUR_2 = config.getint('DEFAULT', 'screenoffhour2', fallback=0)
+    SCREEN_ON_HOUR_2 = config.getint('DEFAULT', 'screenonhour2', fallback=0)
     
     return os.path.getmtime(common.CONFIG_FILE) if os.path.exists(common.CONFIG_FILE) else 0
 
@@ -523,7 +525,14 @@ def main():
             # 1. Determine desired screen state
             config = get_config()
             schedule_enabled = config.getboolean('SCHEDULE', 'enabled', fallback=False)
-            in_off_hours = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
+            
+            in_off_hours_1 = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
+            in_off_hours_2 = False
+            if SCREEN_OFF_HOUR_2 != SCREEN_ON_HOUR_2:
+                in_off_hours_2 = is_hour_in_range(now.hour, SCREEN_OFF_HOUR_2, SCREEN_ON_HOUR_2)
+            
+            in_off_hours = in_off_hours_1 or in_off_hours_2
+            
             is_manually_off = os.path.exists("manual_off.tmp")
             is_manually_on = os.path.exists("manual_on.tmp")
             
