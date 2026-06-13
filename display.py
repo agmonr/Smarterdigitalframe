@@ -357,10 +357,10 @@ def display_hourly_clock(fb, current_image=None, img_path=None):
 def get_images():
     valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
     imgs = []
-    
+
     # Sources: Google Photos synced albums + Configured local pictures folder
     sources = [IMAGE_DIR]
-    
+
     selected = []
     if SELECTED_FOLDERS == 'none':
         return [] # Explicitly return no images
@@ -395,16 +395,8 @@ def get_images():
                     imgs.append(os.path.join(root, f))
     return imgs
 
-def is_hour_in_range(hour, start, end):
-    if start == end: return False
-    # Standard range (e.g., 22 to 07)
-    if start < end:
-        return start <= hour < end
-    else:
-        # Wrapped range (e.g., 22 to 07 where start > end)
-        return hour >= start or hour < end
-
 def get_random_image_index(images):
+
     if not images:
         return 0
 
@@ -524,27 +516,26 @@ def main():
             
             # 1. Determine desired screen state
             config = get_config()
-            schedule_enabled = config.getboolean('SCHEDULE', 'enabled', fallback=False)
-            
-            in_off_hours_1 = is_hour_in_range(now.hour, SCREEN_OFF_HOUR, SCREEN_ON_HOUR)
-            in_off_hours_2 = False
-            if SCREEN_OFF_HOUR_2 != SCREEN_ON_HOUR_2:
-                in_off_hours_2 = is_hour_in_range(now.hour, SCREEN_OFF_HOUR_2, SCREEN_ON_HOUR_2)
-            
-            in_off_hours = in_off_hours_1 or in_off_hours_2
-            
             is_manually_off = os.path.exists("manual_off.tmp")
             is_manually_on = os.path.exists("manual_on.tmp")
             
-            # Priority: 1. Manual OFF, 2. Manual ON, 3. Schedule
+            # Priority 1: Manual OFF
             if is_manually_off:
                 should_be_on = False
+            # Priority 2: Schedule OFF (Stronger than sensors)
+            elif common.is_scheduled_off():
+                should_be_on = False
+            # Priority 3: Manual ON (Override schedule/sensors)
             elif is_manually_on:
                 should_be_on = True
-            elif schedule_enabled:
-                should_be_on = not in_off_hours
+            # Priority 4: Presence Detection (ON Hours only)
+            elif common.is_presence_enabled():
+                # If presence detection is on, display.py should NOT force state.
+                # It lets api.py control the power based on activity.
+                current_hw_state = common.get_hardware_screen_state()
+                should_be_on = (current_hw_state == 'on')
             else:
-                # Default to ON if no schedule/manual override
+                # Default to ON if no schedule/sensors/manual override
                 should_be_on = True
 
             # 2. Update screen state if it doesn't match requirement

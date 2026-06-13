@@ -58,13 +58,19 @@ def on_proximity_detected():
     
     if current_hw_state == "off":
         # Check manual off override
-        if not os.path.exists("manual_off.tmp"):
-            logging.info("Proximity detected! Turning screen ON.")
-            set_screen_state(True)
-            presence_data["screen_state"] = "on"
-            common.notify_display_process()
-        else:
+        if os.path.exists("manual_off.tmp"):
             logging.info("Proximity detected, but screen is manually set to OFF.")
+            return
+
+        # Check schedule - OFF hours are stronger than anything
+        if common.is_scheduled_off():
+            logging.info("Proximity detected, but screen is currently scheduled to be OFF.")
+            return
+
+        logging.info("Proximity detected! Turning screen ON.")
+        set_screen_state(True)
+        presence_data["screen_state"] = "on"
+        common.notify_display_process()
     else:
         # Already ON, just sync state
         presence_data["screen_state"] = "on"
@@ -138,9 +144,13 @@ def presence_detection_thread():
                             if change_percent > 0.5:
                                 presence_data["last_presence_time"] = time.time()
                                 if current_hw_state == "off":
-                                    set_screen_state(True)
-                                    presence_data["screen_state"] = "on"
-                                    common.notify_display_process()
+                                    # Check manual off override and schedule
+                                    if not os.path.exists("manual_off.tmp") and not common.is_scheduled_off():
+                                        set_screen_state(True)
+                                        presence_data["screen_state"] = "on"
+                                        common.notify_display_process()
+                                    else:
+                                        logging.debug("Motion detected, but screen is manually OFF or scheduled OFF.")
                         
                         presence_data["last_frame"] = frame
             

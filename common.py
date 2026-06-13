@@ -346,3 +346,43 @@ def get_images(image_dir=None):
                 rel_path = os.path.relpath(os.path.join(root, f), image_dir)
                 images.append(rel_path)
     return images
+
+def is_hour_in_range(hour, start, end):
+    if start == end: return False
+    # Standard range (e.g., 22 to 07)
+    if start < end:
+        return start <= hour < end
+    else:
+        # Wrapped range (e.g., 22 to 07 where start > end)
+        return hour >= start or hour < end
+
+def is_scheduled_off():
+    """Checks if the screen should be OFF based on the primary and secondary schedules."""
+    from datetime import datetime
+    config = get_config()
+    schedule_enabled = config.getboolean('SCHEDULE', 'enabled', fallback=False)
+    if not schedule_enabled:
+        return False
+        
+    now_hour = datetime.now().hour
+    
+    # Primary Schedule
+    off1 = config.getint('DEFAULT', 'screenoffhour', fallback=22)
+    on1 = config.getint('DEFAULT', 'screenonhour', fallback=7)
+    if is_hour_in_range(now_hour, off1, on1):
+        return True
+        
+    # Secondary Schedule
+    off2 = config.getint('DEFAULT', 'screenoffhour2', fallback=0)
+    on2 = config.getint('DEFAULT', 'screenonhour2', fallback=0)
+    if off2 != on2 and is_hour_in_range(now_hour, off2, on2):
+        return True
+        
+    return False
+
+def is_presence_enabled():
+    """Returns True if either Motion or Proximity detection is enabled."""
+    config = get_config()
+    motion_enabled = config.getboolean('MOTION', 'enabled', fallback=False)
+    proximity_enabled = config.getboolean('PROXIMITY', 'enabled', fallback=False)
+    return motion_enabled or proximity_enabled
