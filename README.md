@@ -35,7 +35,7 @@ Built with a focus on **system integrity** and **smooth aesthetics**, DigitalFra
 
 ### 🌓 Motion-Activated Surveillance & Power
 - **Vision-Based Detection:** Uses the Raspberry Pi Camera to detect movement with configurable sensitivity and auto-calibration for varying light levels.
-- **Bluetooth Proximity Detection:** Uses BLE to detect nearby mobile devices, allowing the frame to wake up when you enter the room and sleep when you leave. Smart tags (AirTags, etc.) are automatically ignored.
+- **Bluetooth Proximity Detection:** Uses BLE to detect nearby mobile devices, allowing the frame to wake up when you enter the room and sleep when you leave. Features intuitive distance-based thresholds (in meters) and automatically ignores smart tags (AirTags, etc.).
 - **Smart Power Management:** Automatically toggles HDMI/LCD power via `vcgencmd` and framebuffer blanking, extending display life and saving energy.
 - **Live Video Feed:** High-efficiency MJPEG streaming provides a real-time "security cam" view accessible from any web browser.
 
