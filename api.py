@@ -11,6 +11,7 @@ import io
 import threading
 import time
 import requests
+import psutil
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory, render_template, Response
 from flask_cors import CORS
@@ -44,6 +45,37 @@ presence_data = {
 }
 camera_lock = threading.Lock()
 proximity_scanner = None
+
+_pairing_mode_active = False
+_pairing_mode_end_time = 0
+
+def _enable_pairing_mode_task(duration=60):
+    global _pairing_mode_active, _pairing_mode_end_time
+    try:
+        logging.info(f"Enabling Bluetooth Pairing Mode for {duration}s...")
+        # Ensure bluetooth is powered and discoverable
+        subprocess.run(['sudo', 'bluetoothctl', 'power', 'on'], check=False)
+        subprocess.run(['sudo', 'bluetoothctl', 'discoverable', 'on'], check=False)
+        subprocess.run(['sudo', 'bluetoothctl', 'pairable', 'on'], check=False)
+        
+        _pairing_mode_active = True
+        _pairing_mode_end_time = time.time() + duration
+        
+        time.sleep(duration)
+        
+        logging.info("Disabling Bluetooth Pairing Mode (timeout)...")
+        subprocess.run(['sudo', 'bluetoothctl', 'discoverable', 'off'], check=False)
+        subprocess.run(['sudo', 'bluetoothctl', 'pairable', 'off'], check=False)
+        _pairing_mode_active = False
+    except Exception as e:
+        logging.error(f"Error in Bluetooth pairing mode task: {e}")
+        _pairing_mode_active = False
+
+@app.route('/api/proximity/pairing-mode', methods=['POST'])
+def enable_pairing_mode_api():
+    duration = request.json.get('duration', 60)
+    threading.Thread(target=_enable_pairing_mode_task, args=(duration,), daemon=True).start()
+    return jsonify({"status": "success", "message": f"Pairing mode enabled for {duration} seconds."})
 
 def on_proximity_detected():
     now = time.time()
@@ -861,7 +893,11 @@ def get_system_status():
             "percent": mem.percent
         },
         "ble_devices_in_range": presence_data["ble_devices_in_range"],
-        "ble_detailed_devices": proximity_scanner.get_detailed_devices() if proximity_scanner else []
+        "ble_detailed_devices": proximity_scanner.get_detailed_devices() if proximity_scanner else [],
+        "ble_pairing_mode": {
+            "active": _pairing_mode_active,
+            "remaining": max(0, int(_pairing_mode_end_time - time.time())) if _pairing_mode_active else 0
+        }
     })
 
 @app.route('/system')

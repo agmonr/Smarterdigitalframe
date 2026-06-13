@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Proximity - Smarter Digital Frame</title>
+    <meta name="description" content="BLE proximity detection management - control thresholds, view active devices.">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .card { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        h1 { margin-bottom: 20px; }
+        h3 { margin-bottom: 10px; }
+
+        /* Toggle switch */
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #3498db; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
+        /* Setting row */
+        .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-label { flex: 1; }
+        .setting-label strong { display: block; margin-bottom: 2px; }
+        .setting-label small { color: #888; }
+        .setting-input input { width: 100px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; text-align: center; }
+
+        /* BLE Table */
+        .ble-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        .ble-table th, .ble-table td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        .status-active { color: #2ecc71; font-weight: bold; }
+        .status-ignored { color: #e67e22; }
+        .status-weak { color: #7f8c8d; }
+        .status-out { color: #ccc; }
+        .rssi-bar { height: 4px; background: #eee; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+        .rssi-fill { height: 100%; background: #3498db; }
+
+        /* Stat value */
+        .stat-value { font-size: 24px; font-weight: bold; color: #3498db; }
+
+        /* Buttons */
+        .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: background 0.2s; }
+        .btn-save { background: #3498db; color: white; }
+        .btn-save:hover { background: #2980b9; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-success { background: #2ecc71; color: white; }
+        .btn-success:hover { background: #27ae60; }
+        .btn-small { padding: 4px 8px; font-size: 11px; }
+
+        /* Toast notification */
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #2ecc71; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 500; opacity: 0; transition: opacity 0.3s; z-index: 9999; }
+        .toast.show { opacity: 1; }
+        .toast.error { background: #e74c3c; }
+
+        nav { margin-bottom: 20px; }
+        nav a { margin-right: 20px; color: #3498db; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+{% include "nav.html" %}
+    <div class="container">
+        <h1>&#128225; BLE Proximity Management</h1>
+
+        <!-- Enable/Disable Toggle -->
+        <div class="card" style="border-left: 5px solid #3498db;">
+            <h3>Proximity Detection (BLE)</h3>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <strong>Enable Proximity Detection</strong>
+                    <small>Uses Bluetooth to detect nearby dynamic devices (phones).</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="ble-enabled" onchange="saveConfig()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <strong>RSSI Threshold (dBm)</strong>
+                    <small>Closer is higher (e.g., -75). Only devices above this are tracked.</small>
+                </div>
+                <div class="setting-input">
+                    <input type="number" id="rssi-threshold" min="-100" max="0" step="1" onchange="saveConfig()">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <strong>Stable Threshold (Std Dev)</strong>
+                    <small>Lower is stricter (e.g., 0.5). Stationary devices have low variance.</small>
+                </div>
+                <div class="setting-input">
+                    <input type="number" id="stable-threshold" min="0" max="5" step="0.1" onchange="saveConfig()">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <strong>Timeout (seconds)</strong>
+                    <small>How long to keep the screen on after detection.</small>
+                </div>
+                <div class="setting-input">
+                    <input type="number" id="ble-timeout" min="5" max="3600" step="5" onchange="saveConfig()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bluetooth Pairing Card -->
+        <div class="card" style="border-left: 5px solid #2ecc71;">
+            <h3>Bluetooth Pairing</h3>
+            <div class="setting-row">
+                <div class="setting-label">
+                    <strong>Enable Pairing Mode</strong>
+                    <small>Make the frame discoverable so you can pair your phone. Pairing helps identify devices more reliably.</small>
+                </div>
+                <div>
+                    <button id="pairing-btn" class="btn btn-success" onclick="enablePairingMode()">Start Pairing Mode (60s)</button>
+                </div>
+            </div>
+            <div id="pairing-status" style="margin-top: 10px; display: none; text-align: center; color: #2ecc71; font-weight: bold;">
+                Pairing Mode Active: <span id="pairing-timer">60</span>s remaining
+            </div>
+        </div>
+
+        <!-- Active Devices -->
+        <div class="card">
+            <h3>Active Devices
+                <span id="ble-device-count" class="stat-value" style="font-size: 18px; margin-left: 10px;">--</span>
+                <small style="color: #888; font-weight: normal;"> triggering presence</small>
+            </h3>
+
+            <table class="ble-table">
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>RSSI</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="ble-table-body">
+                    <!-- Devices will be injected here -->
+                </tbody>
+            </table>
+            <div id="ble-empty" style="text-align: center; padding: 20px; color: #aaa; display: none;">
+                No BLE devices detected yet. Make sure the scanner is enabled.
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let pollTimer = null;
+
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (isError ? ' error' : '');
+            setTimeout(() => { t.className = 'toast'; }, 2500);
+        }
+
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                const prox = config.PROXIMITY || {};
+
+                document.getElementById('ble-enabled').checked =
+                    prox.enabled === 'True' || prox.enabled === true || prox.enabled === 'true';
+                document.getElementById('rssi-threshold').value = prox.rssi_threshold || -75;
+                document.getElementById('stable-threshold').value = prox.stable_threshold || 0.5;
+                document.getElementById('ble-timeout').value = prox.timeout || 300;
+            } catch (e) {
+                console.error("Failed to fetch config", e);
+            }
+        }
+
+        async function saveConfig() {
+            try {
+                const payload = {
+                    PROXIMITY: {
+                        enabled: document.getElementById('ble-enabled').checked,
+                        rssi_threshold: document.getElementById('rssi-threshold').value,
+                        stable_threshold: document.getElementById('stable-threshold').value,
+                        timeout: document.getElementById('ble-timeout').value
+                    }
+                };
+                const res = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    showToast('Settings saved!');
+                } else {
+                    showToast('Failed to save', true);
+                }
+            } catch (e) {
+                showToast('Failed to save', true);
+            }
+        }
+
+        async function toggleIgnore(address) {
+            try {
+                const res = await fetch('/api/proximity/toggle-ignore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: address })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast(data.action === 'added' ? 'Device ignored' : 'Device unignored');
+                    fetchStatus();
+                }
+            } catch (e) {
+                showToast('Failed to toggle ignore', true);
+            }
+        }
+
+        async function enablePairingMode() {
+            try {
+                const res = await fetch('/api/proximity/pairing-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration: 60 })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast('Pairing mode enabled for 60s');
+                    fetchStatus();
+                }
+            } catch (e) {
+                showToast('Failed to enable pairing mode', true);
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const sysResponse = await fetch('/api/system/status');
+                const data = await sysResponse.json();
+
+                const count = data.ble_devices_in_range !== undefined ? data.ble_devices_in_range : '--';
+                document.getElementById('ble-device-count').textContent = count;
+
+                // Update Pairing UI
+                const pairingBtn = document.getElementById('pairing-btn');
+                const pairingStatus = document.getElementById('pairing-status');
+                const pairingTimer = document.getElementById('pairing-timer');
+
+                if (data.ble_pairing_mode && data.ble_pairing_mode.active) {
+                    pairingBtn.disabled = true;
+                    pairingBtn.textContent = "Pairing Mode Active";
+                    pairingStatus.style.display = 'block';
+                    pairingTimer.textContent = data.ble_pairing_mode.remaining;
+                } else {
+                    pairingBtn.disabled = false;
+                    pairingBtn.textContent = "Start Pairing Mode (60s)";
+                    pairingStatus.style.display = 'none';
+                }
+
+                const bleBody = document.getElementById('ble-table-body');
+                const emptyMsg = document.getElementById('ble-empty');
+                bleBody.innerHTML = '';
+
+                if (data.ble_detailed_devices && data.ble_detailed_devices.length > 0) {
+                    emptyMsg.style.display = 'none';
+                    data.ble_detailed_devices.forEach(device => {
+                        const tr = document.createElement('tr');
+                        const rssiPercent = Math.min(100, Math.max(0, (device.rssi + 100) * 2));
+
+                        let statusClass = 'status-out';
+                        if (device.status === 'Active') statusClass = 'status-active';
+                        else if (device.status === 'Ignored') statusClass = 'status-ignored';
+                        else if (device.status === 'Weak Signal') statusClass = 'status-weak';
+
+                        const statusDisplay = device.status === 'Ignored' ? `Ignored (${device.ignore_reason})` : device.status;
+                        const isManuallyIgnored = device.ignore_reason === 'Manually Ignored';
+
+                        tr.innerHTML = `
+                            <td>
+                                <strong>${device.name}</strong><br>
+                                <small style="color:#666">${device.address}</small>
+                            </td>
+                            <td style="width: 80px">
+                                ${device.rssi} dBm
+                                <div class="rssi-bar"><div class="rssi-fill" style="width: ${rssiPercent}%"></div></div>
+                            </td>
+                            <td><span class="${statusClass}">${statusDisplay}</span></td>
+                            <td>
+                                <button class="btn btn-small" style="background: ${isManuallyIgnored ? '#2ecc71' : '#e74c3c'}; color: white;"
+                                        onclick="toggleIgnore('${device.address}')">
+                                    ${isManuallyIgnored ? 'Unignore' : 'Ignore'}
+                                </button>
+                            </td>
+                        `;
+                        bleBody.appendChild(tr);
+                    });
+                } else {
+                    emptyMsg.style.display = 'block';
+                }
+            } catch (e) {
+                console.error("Failed to fetch status", e);
+            }
+        }
+
+        fetchConfig();
+        fetchStatus();
+        pollTimer = setInterval(fetchStatus, 5000);
+    </script>
+</body>
+</html>
