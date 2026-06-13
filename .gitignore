@@ -4,8 +4,11 @@
 logs/*
 config.ini
 __pycache__/
+*.pyc
 venv/*
 .wifi_configured
 *.db
 images/*
+captures/*
+google_photos/*
 removed/
