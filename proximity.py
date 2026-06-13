@@ -21,7 +21,7 @@ class ProximityScanner:
         self.devices_in_range = 0
         self.logger = common.setup_logger('proximity', 'proximity.log')
 
-    def is_device_dynamic(self, addr, name, rssi, config):
+    def is_device_dynamic(self, addr, name, rssi, config, advertisement_data=None):
         stable_threshold = config.getfloat('PROXIMITY', 'stable_threshold', fallback=0.5)
         min_samples = config.getint('PROXIMITY', 'min_samples', fallback=10)
         ignore_after_hours = config.getint('PROXIMITY', 'ignore_after_hours', fallback=2)
@@ -39,6 +39,26 @@ class ProximityScanner:
                 "is_dynamic": True,
                 "ignore_reason": ""
             }
+
+            # 1. Smart Tag Filter: Check for known tracker keywords in name
+            tag_keywords = ["TAG", "TILE", "NUT", "TRACKER", "BEACON", "G-TAG", "ITAG"]
+            upper_name = (name or "").upper()
+            if any(k in upper_name for k in tag_keywords):
+                device_registry[addr]["is_dynamic"] = False
+                device_registry[addr]["ignore_reason"] = "Smart Tag (Name)"
+                return False
+
+            # 2. Smart Tag Filter: Check manufacturer data (Apple=0x004c, Samsung=0x0075)
+            if advertisement_data and advertisement_data.manufacturer_data:
+                m_ids = advertisement_data.manufacturer_data.keys()
+                # Apple AirTags and Samsung SmartTags often use these IDs
+                if 0x004c in m_ids or 0x0075 in m_ids:
+                    # Heuristic: if it's Apple/Samsung but has no friendly name, it's likely a tag or system device
+                    if not name or name == addr:
+                        device_registry[addr]["is_dynamic"] = False
+                        device_registry[addr]["ignore_reason"] = "Smart Tag (MFG Data)"
+                        return False
+
             # Initial check for manual ignore
             if addr.upper() in ignored_list:
                 device_registry[addr]["is_dynamic"] = False
@@ -52,6 +72,10 @@ class ProximityScanner:
         if addr.upper() in ignored_list:
             device_registry[addr]["is_dynamic"] = False
             device_registry[addr]["ignore_reason"] = "Manually Ignored"
+            return False
+
+        # If already flagged as a tag, keep it ignored
+        if device_registry[addr]["ignore_reason"].startswith("Smart Tag"):
             return False
 
         # Check hard limit
@@ -84,7 +108,7 @@ class ProximityScanner:
 
             rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
             # Update registry even if below threshold to keep track of devices in range vs out of range
-            is_dynamic = self.is_device_dynamic(device.address, device.name, advertisement_data.rssi, config)
+            is_dynamic = self.is_device_dynamic(device.address, device.name, advertisement_data.rssi, config, advertisement_data)
             
             if advertisement_data.rssi >= rssi_threshold:
                 if is_dynamic:
