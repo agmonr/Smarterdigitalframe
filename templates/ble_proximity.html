@@ -84,11 +84,11 @@
 
             <div class="setting-row">
                 <div class="setting-label">
-                    <strong>RSSI Threshold (dBm)</strong>
-                    <small>Closer is higher (e.g., -75). Only devices above this are tracked.</small>
+                    <strong>Distance Threshold (meters)</strong>
+                    <small>Approximate distance. Devices closer than this trigger presence.</small>
                 </div>
                 <div class="setting-input">
-                    <input type="number" id="rssi-threshold" min="-100" max="0" step="1" onchange="saveConfig()">
+                    <input type="number" id="distance-threshold" min="0.1" max="20" step="0.5" onchange="saveConfig()">
                 </div>
             </div>
 
@@ -141,7 +141,7 @@
                 <thead>
                     <tr>
                         <th>Device</th>
-                        <th>RSSI</th>
+                        <th>Distance (approx)</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -176,7 +176,7 @@
 
                 document.getElementById('ble-enabled').checked =
                     prox.enabled === 'True' || prox.enabled === true || prox.enabled === 'true';
-                document.getElementById('rssi-threshold').value = prox.rssi_threshold || -75;
+                document.getElementById('distance-threshold').value = prox.distance_threshold || 4.0;
                 document.getElementById('stable-threshold').value = prox.stable_threshold || 0.5;
                 document.getElementById('ble-timeout').value = prox.timeout || 300;
             } catch (e) {
@@ -189,7 +189,7 @@
                 const payload = {
                     PROXIMITY: {
                         enabled: document.getElementById('ble-enabled').checked,
-                        rssi_threshold: document.getElementById('rssi-threshold').value,
+                        distance_threshold: document.getElementById('distance-threshold').value,
                         stable_threshold: document.getElementById('stable-threshold').value,
                         timeout: document.getElementById('ble-timeout').value
                     }
@@ -273,14 +273,18 @@
 
                 if (data.ble_detailed_devices && data.ble_detailed_devices.length > 0) {
                     emptyMsg.style.display = 'none';
+                    const threshold = parseFloat(document.getElementById('distance-threshold').value) || 4.0;
+
                     data.ble_detailed_devices.forEach(device => {
                         const tr = document.createElement('tr');
-                        const rssiPercent = Math.min(100, Math.max(0, (device.rssi + 100) * 2));
+                        // Progress bar: full at 0m, empty at threshold * 1.5
+                        const barMax = threshold * 1.5;
+                        const distPercent = Math.max(0, Math.min(100, 100 * (1 - device.distance_m / barMax)));
 
                         let statusClass = 'status-out';
                         if (device.status === 'Active') statusClass = 'status-active';
                         else if (device.status === 'Ignored') statusClass = 'status-ignored';
-                        else if (device.status === 'Weak Signal') statusClass = 'status-weak';
+                        else if (device.status === 'Away') statusClass = 'status-weak';
 
                         const statusDisplay = device.status === 'Ignored' ? `Ignored (${device.ignore_reason})` : device.status;
                         const isManuallyIgnored = device.ignore_reason === 'Manually Ignored';
@@ -290,9 +294,9 @@
                                 <strong>${device.name}</strong><br>
                                 <small style="color:#666">${device.address}</small>
                             </td>
-                            <td style="width: 80px">
-                                ${device.rssi} dBm
-                                <div class="rssi-bar"><div class="rssi-fill" style="width: ${rssiPercent}%"></div></div>
+                            <td style="width: 100px">
+                                ${device.distance_m} m
+                                <div class="rssi-bar"><div class="rssi-fill" style="width: ${distPercent}%; background: ${device.distance_m <= threshold ? '#2ecc71' : '#3498db'}"></div></div>
                             </td>
                             <td><span class="${statusClass}">${statusDisplay}</span></td>
                             <td>

@@ -11,6 +11,14 @@ import common
 # {address: {"rssi_history": [], "first_seen": datetime, "last_seen": datetime, "name": str, "is_dynamic": bool, "ignore_reason": str}}
 device_registry = {}
 
+def rssi_to_distance(rssi):
+    """Estimate distance in meters from RSSI using a standard path-loss model."""
+    if rssi >= 0: return 0.1
+    # Formula: distance = 10 ^ ((Measured Power - RSSI) / (10 * N))
+    # Measured Power (RSSI at 1m): -60
+    # N (Path loss exponent): 2.5
+    return round(10 ** ((-60 - rssi) / 25), 1)
+
 class ProximityScanner:
     def __init__(self, callback_on_detection):
         self.callback_on_detection = callback_on_detection
@@ -106,13 +114,14 @@ class ProximityScanner:
             if not config.getboolean('PROXIMITY', 'enabled', fallback=False):
                 return
 
-            rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
+            dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
             # Update registry even if below threshold to keep track of devices in range vs out of range
             is_dynamic = self.is_device_dynamic(device.address, device.name, advertisement_data.rssi, config, advertisement_data)
             
-            if advertisement_data.rssi >= rssi_threshold:
+            distance = rssi_to_distance(advertisement_data.rssi)
+            if distance <= dist_threshold:
                 if is_dynamic:
-                    self.logger.debug(f"Dynamic Device Detected: {device.address} ({device.name}) | RSSI: {advertisement_data.rssi}")
+                    self.logger.debug(f"Dynamic Device Detected: {device.address} ({device.name}) | Distance: {distance}m (RSSI: {advertisement_data.rssi})")
                     self.callback_on_detection()
         except Exception as e:
             self.logger.error(f"Error in ble_callback: {e}")
@@ -137,34 +146,36 @@ class ProximityScanner:
 
     def update_device_count(self):
         config = common.get_config()
-        rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
+        dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
         now = datetime.now()
         count = 0
         for addr, data in device_registry.items():
-            # Device seen in last 30 seconds and last RSSI was above threshold
+            # Device seen in last 30 seconds and last distance was below threshold
             time_diff = (now - data["last_seen"]).total_seconds()
             last_rssi = data["rssi_history"][-1]
+            distance = rssi_to_distance(last_rssi)
             if time_diff < 30:
-                if last_rssi >= rssi_threshold and data.get("is_dynamic", True):
+                if distance <= dist_threshold and data.get("is_dynamic", True):
                     count += 1
         self.devices_in_range = count
 
     def get_detailed_devices(self):
         config = common.get_config()
-        rssi_threshold = config.getint('PROXIMITY', 'rssi_threshold', fallback=-75)
+        dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
         now = datetime.now()
         detailed_list = []
         
         for addr, data in device_registry.items():
             last_rssi = data["rssi_history"][-1]
+            distance = rssi_to_distance(last_rssi)
             time_diff = (now - data["last_seen"]).total_seconds()
             
             status = "Out of Range"
             if time_diff < 30:
                 if not data.get("is_dynamic", True):
                     status = "Ignored"
-                elif last_rssi < rssi_threshold:
-                    status = "Weak Signal"
+                elif distance > dist_threshold:
+                    status = "Away"
                 else:
                     status = "Active"
             
@@ -172,12 +183,13 @@ class ProximityScanner:
                 "address": addr,
                 "name": data.get("name", "Unknown"),
                 "rssi": last_rssi,
+                "distance_m": distance,
                 "status": status,
                 "ignore_reason": data.get("ignore_reason", ""),
                 "last_seen_sec": int(time_diff)
             })
             
-        return sorted(detailed_list, key=lambda x: x["rssi"], reverse=True)
+        return sorted(detailed_list, key=lambda x: x["distance_m"])
 
     def cleanup_registry(self):
         now = datetime.now()
