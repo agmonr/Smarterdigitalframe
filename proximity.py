@@ -136,8 +136,8 @@ class ProximityScanner:
             await asyncio.sleep(5)
             self.update_device_count()
             
-            # Cleanup every hour
-            if time.time() - last_cleanup > 3600:
+            # Cleanup every 5 minutes
+            if time.time() - last_cleanup > 300:
                 self.cleanup_registry()
                 last_cleanup = time.time()
                 
@@ -195,8 +195,8 @@ class ProximityScanner:
         now = datetime.now()
         to_delete = []
         for addr, data in device_registry.items():
-            # Remove devices not seen for more than 4 hours
-            if now - data["last_seen"] > timedelta(hours=4):
+            # Remove devices not seen for more than 15 minutes
+            if now - data["last_seen"] > timedelta(minutes=15):
                 to_delete.append(addr)
         for addr in to_delete:
             del device_registry[addr]
