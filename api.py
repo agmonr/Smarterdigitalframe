@@ -670,7 +670,7 @@ def screen_control():
     else:
         state = get_hardware_screen_state()
         presence_data["screen_state"] = state
-        return jsonify({"state": state})
+        return jsonify({"status": "success", "state": state})
 
 @app.route('/api/internal/screen_state', methods=['POST'])
 def sync_screen_state():
