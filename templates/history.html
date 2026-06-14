@@ -20,7 +20,7 @@
 
         /* Master List */
         .history-list { 
-            width: fit-content;
+            width: 100%;
             min-width: 260px;
             max-width: 420px;
             background: var(--card-bg, #fff); 
@@ -35,6 +35,7 @@
         /* Detail Preview */
         .preview-pane { 
             flex: 1;
+            min-width: 0;
             background: var(--card-bg, #fff); 
             padding: 20px; 
             border-radius: 12px; 
@@ -53,12 +54,16 @@
             border-bottom: 1px solid #f0f4f8; 
             cursor: pointer; 
             display: flex; 
+            flex-wrap: nowrap;
             justify-content: space-between; 
             align-items: center; 
             scroll-margin: 15px 0;
             border-radius: 8px;
             transition: all 0.2s ease;
             margin-bottom: 4px;
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
         }
         .history-item:hover { background: #f8fbff; }
         .history-item.active { 
@@ -69,6 +74,17 @@
 
         .timestamp { font-size: 11px; color: #95a5a6; font-variant-numeric: tabular-nums; }
         
+        #preview-filename { 
+            margin-bottom: 15px; 
+            font-weight: 600; 
+            font-size: 14px; 
+            color: #34495e; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            width: 100%;
+        }
+
         .img-container {
             flex: 1;
             display: flex;
@@ -139,7 +155,7 @@
                 border-bottom: 3px solid #3498db;
                 border-radius: 0;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                max-height: 50vh;
+                max-height: 60vh;
             }
 
             .img-container { 
@@ -155,12 +171,15 @@
                 height: auto;
                 overflow-y: visible;
                 flex: none;
+                width: 100%;
+                max-width: 100%;
             }
 
             .history-item {
                 background: #fff;
                 border: 1px solid #e1e8ed;
                 margin: 0 10px 8px 10px;
+                width: calc(100% - 20px);
                 /* This ensures when we scroll to an item, it lands nicely */
                 scroll-margin-top: 250px; 
             }
@@ -173,7 +192,6 @@
             }
             button.show { flex: 2; padding: 10px; font-size: 14px; margin-bottom: 0; max-width: none; }
             button.remove { flex: 1; padding: 10px 5px; font-size: 12px; max-width: none; }
-            #preview-filename { font-size: 11px; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         }
         </style>
 </head>
@@ -191,7 +209,7 @@
             
             <!-- Detail Preview -->
             <div class="preview-pane" id="preview-section">
-                <div id="preview-filename" style="margin-bottom: 15px; font-weight: 600; font-size: 14px; color: #34495e; word-break: break-all;">Select an image</div>
+                <div id="preview-filename">Select an image</div>
                 
                 <div class="img-container">
                     <img id="preview-img" class="img-preview" src="" style="display: none;">
@@ -280,22 +298,26 @@
                     div.className = 'history-item';
                     div.onclick = () => selectImage(item.name, div, item.path, index);
                     
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = item.name;
-                    nameSpan.style.fontSize = '13px';
-                    nameSpan.style.fontWeight = '500';
-                    nameSpan.style.overflow = 'hidden';
-                    nameSpan.style.textOverflow = 'ellipsis';
-                    nameSpan.style.whiteSpace = 'nowrap';
-                    nameSpan.style.paddingRight = '10px';
+                    const nameDiv = document.createElement('div');
+                    nameDiv.textContent = item.name;
+                    nameDiv.style.fontSize = '13px';
+                    nameDiv.style.fontWeight = '500';
+                    nameDiv.style.overflow = 'hidden';
+                    nameDiv.style.textOverflow = 'ellipsis';
+                    nameDiv.style.whiteSpace = 'nowrap';
+                    nameDiv.style.paddingRight = '10px';
+                    nameDiv.style.flex = '1';
+                    nameDiv.style.minWidth = '0';
                     
                     const timeSpan = document.createElement('span');
                     const date = new Date(item.timestamp);
                     timeSpan.className = 'timestamp';
                     timeSpan.textContent = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     timeSpan.style.flexShrink = '0';
+                    timeSpan.style.whiteSpace = 'nowrap';
+                    timeSpan.style.marginLeft = '10px';
                     
-                    div.appendChild(nameSpan);
+                    div.appendChild(nameDiv);
                     div.appendChild(timeSpan);
                     list.appendChild(div);
 

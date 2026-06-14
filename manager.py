@@ -28,11 +28,11 @@ def live_video():
 def folders_page():
     return render_template('folders.html')
 
-@app.route('/settings')
+@app.route('/settings/general')
 def settings_page():
     return render_template('settings.html')
 
-@app.route('/proximity')
+@app.route('/settings/proximity')
 def proximity_page():
     return render_template('ble_proximity.html')
 

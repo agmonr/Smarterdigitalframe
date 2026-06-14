@@ -119,14 +119,19 @@
     <a href="/camera" id="nav-camera" data-path="/camera" style="display: none;">Camera</a>
     <a href="/live-video" id="nav-live-video" data-path="/live-video" style="display: none;">Live Video</a>
     <a href="/folders" data-path="/folders">Folders</a>
-    <a href="/settings" data-path="/settings">Settings</a>
+    <div class="dropdown">
+        <span class="dropbtn">Settings <small>&#9662;</small></span>
+        <div class="dropdown-content">
+            <a href="/settings/general" data-path="/settings/general">General</a>
+            <a href="/settings/proximity" data-path="/settings/proximity">Proximity</a>
+        </div>
+    </div>
     <div class="dropdown">
         <span class="dropbtn">Utils <small>&#9662;</small></span>
         <div class="dropdown-content">
             <a href="/terminal">Terminal</a>
             <a href="/system">Status</a>
             <a href="/network">Network</a>
-            <a href="/proximity">Proximity</a>
         </div>
     </div>
 </div>
@@ -137,9 +142,20 @@
         const currentPath = window.location.pathname;
         const navLinks = document.querySelectorAll('.top-nav a');
         navLinks.forEach(link => {
-            if (link.getAttribute('href') === currentPath || 
-                (currentPath === '/' && link.getAttribute('href') === '/')) {
+            const linkPath = link.getAttribute('href');
+            if (linkPath === currentPath || (currentPath === '/' && linkPath === '/')) {
                 link.classList.add('active');
+                
+                // If the link is inside a dropdown, highlight the dropdown button
+                const dropdown = link.closest('.dropdown');
+                if (dropdown) {
+                    const dropbtn = dropdown.querySelector('.dropbtn');
+                    if (dropbtn) {
+                        dropbtn.style.backgroundColor = 'var(--nav-hover)';
+                        dropbtn.style.color = 'var(--primary-color)';
+                        dropbtn.style.fontWeight = '600';
+                    }
+                }
             }
         });
 
