@@ -387,30 +387,33 @@ def get_images():
     return common.get_images()
 
 def get_random_image_index(images):
-
     if not images:
         return 0
 
-    # Try up to 5 times to find an image not shown in the last 24 hours
+    # Get relative paths of recently shown images (from history)
     recent_paths = common.get_recent_paths(days=1)
-
-    # Pre-calculate relative paths for comparison to avoid repeated os.path.relpath calls
-    # but only if we have a reasonable number of images to avoid overhead.
+    
+    # Identify folders (groups) that had images shown recently
+    recent_groups = set()
+    for p in recent_paths:
+        recent_groups.add(os.path.dirname(p))
 
     indices = list(range(len(images)))
     random.shuffle(indices)
 
-    # Try to find a 'new' one from the shuffled list
-    for i in range(min(len(indices), 10)):
+    # Try up to 5 times to find an image from a group not recently shown
+    for i in range(min(len(indices), 5)):
         idx = indices[i]
         try:
             rel_path = images[idx]
-            if rel_path not in recent_paths:
+            group = os.path.dirname(rel_path)
+            # Ensure neither the image nor its entire group was recently shown
+            if rel_path not in recent_paths and group not in recent_groups:
                 return idx
         except:
             pass
 
-    # If all recently shown or too many failed tries, just return the first random one
+    # If all recently shown or 5 failed tries, fall back to the first random one
     return indices[0] if indices else 0
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
