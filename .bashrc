@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Smarter Digital Frame .bashrc
 
 # Sourcing system bashrc if it exists
@@ -18,3 +19,6 @@ export PS1="\[\e[32m\]frame-shell\[\e[m\]:\[\e[34m\]\w\[\e[m\]\$ "
 
 # Ensure we are in the project root
 cd /home/ram/photos/test/Smarterdigitalframe
+=======
+echo 'hi'
+>>>>>>> 94e57d97e568581996585d058905c4ede42d527b
