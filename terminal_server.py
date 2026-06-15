@@ -98,13 +98,16 @@ def on_connect():
         env['SHELL'] = '/bin/bash'
         
         # Spawn the process using the slave PTY as stdin/stdout/stderr
+        # Use the local .bashrc in the project root
+        rc_path = os.path.join(common.PROJECT_ROOT, '.bashrc')
         p = subprocess.Popen(
-            ['bash', '-l'],
+            ['bash', '--rcfile', rc_path, '-i'],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
             preexec_fn=os.setsid,
             env=env,
+            cwd=common.PROJECT_ROOT,
             close_fds=True
         )
         child_pid = p.pid
