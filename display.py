@@ -393,27 +393,27 @@ def get_random_image_index(images):
     # Get relative paths of recently shown images (from history)
     recent_paths = common.get_recent_paths(days=1)
     
-    # Identify folders (groups) that had images shown recently
-    recent_groups = set()
-    for p in recent_paths:
-        recent_groups.add(os.path.dirname(p))
-
     indices = list(range(len(images)))
     random.shuffle(indices)
 
-    # Try up to 5 times to find an image from a group not recently shown
+    # Try up to 5 times to find a starting point where the WHOLE group is fresh
     for i in range(min(len(indices), 5)):
         idx = indices[i]
         try:
-            rel_path = images[idx]
-            group = os.path.dirname(rel_path)
-            # Ensure neither the image nor its entire group was recently shown
-            if rel_path not in recent_paths and group not in recent_groups:
+            is_group_fresh = True
+            # Check the next GROUP_SIZE images starting from idx
+            for offset in range(GROUP_SIZE):
+                check_idx = (idx + offset) % len(images)
+                if images[check_idx] in recent_paths:
+                    is_group_fresh = False
+                    break
+            
+            if is_group_fresh:
                 return idx
         except:
             pass
 
-    # If all recently shown or 5 failed tries, fall back to the first random one
+    # If 5 failed tries, fall back to the first random one
     return indices[0] if indices else 0
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
