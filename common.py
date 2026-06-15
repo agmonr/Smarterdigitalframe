@@ -36,6 +36,12 @@ else:
 STATE_FILE = os.path.join(SHM_ROOT, 'state.json')
 SYNC_STATUS_FILE = os.path.join(SHM_ROOT, 'sync_status.json')
 ALBUM_STATUS_FILE = os.path.join(SHM_ROOT, 'album_status.json')
+MANUAL_ON_FILE = os.path.join(SHM_ROOT, 'manual_on.tmp')
+MANUAL_OFF_FILE = os.path.join(SHM_ROOT, 'manual_off.tmp')
+NEXT_IMAGE_FILE = os.path.join(SHM_ROOT, 'next_image.tmp')
+PREV_IMAGE_FILE = os.path.join(SHM_ROOT, 'prev_image.tmp')
+NEXT_GROUP_FILE = os.path.join(SHM_ROOT, 'next_group.tmp')
+SHOW_IMAGE_FILE = os.path.join(SHM_ROOT, 'show_image.tmp')
 
 HISTORY_FILE = os.path.join(PROJECT_ROOT, 'history.json')
 DB_FILE = os.path.join(PROJECT_ROOT, 'history.db')
@@ -51,20 +57,29 @@ if not os.path.exists(REMOVE_DIR):
 # Cache for config to minimize reads
 _config_cache = None
 _config_mtime = 0
+_config_last_check = 0
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     # Optimizations for SD Cards: Minimize writes and use RAM for temporary data
     conn.execute('PRAGMA journal_mode = WAL')
-    conn.execute('PRAGMA synchronous = OFF') # Maximum performance, slight risk on power loss
-    conn.execute('PRAGMA cache_size = -5000') # ~5MB cache
+    conn.execute('PRAGMA synchronous = NORMAL') # Better balance for SD cards than OFF
+    conn.execute('PRAGMA cache_size = -10000') # ~10MB cache (increased)
     conn.execute('PRAGMA temp_store = MEMORY')
     conn.execute('PRAGMA mmap_size = 30000000') # Use memory mapping for faster reads
+    conn.execute('PRAGMA page_size = 4096') # Standard SD card page size
     return conn
+
+# Flag to ensure DB is initialized only once per process
+_db_initialized = False
 
 def init_db():
     """Initialize SQLite database and migrate existing history.json if it exists."""
+    global _db_initialized
+    if _db_initialized:
+        return
+    
     # Always check if table exists, even if DB file exists
     conn = get_db_connection()
     try:
@@ -77,6 +92,7 @@ def init_db():
             )
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_history_name ON history(name)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp)')
         conn.commit()
         
         # Migration logic
@@ -108,6 +124,8 @@ def init_db():
             conn.commit()
         except:
             pass
+        
+        _db_initialized = True
     finally:
         conn.close()
 
@@ -184,7 +202,14 @@ def get_recent_paths(days=1):
         return set()
 
 def get_config():
-    global _config_cache, _config_mtime
+    global _config_cache, _config_mtime, _config_last_check
+    
+    now = time.time()
+    # Only check file system if it's been more than 30 seconds since last check
+    if _config_cache is not None and (now - _config_last_check < 30):
+        return _config_cache
+
+    _config_last_check = now
     
     # Check if config file was modified since last load
     current_mtime = 0
@@ -327,24 +352,44 @@ def get_image_dir():
     config = get_config()
     return config.get('DEFAULT', 'imagedir', fallback=os.path.join(PROJECT_ROOT, 'images/'))
 
+# Cache for image list
+_image_cache = None
+_image_cache_time = 0
+
 def get_images(image_dir=None):
+    global _image_cache, _image_cache_time
     if image_dir is None:
         image_dir = get_image_dir()
     
+    now = time.time()
+    # Cache image list for 60 seconds (increased from 30)
+    if _image_cache is not None and (now - _image_cache_time < 60):
+        return _image_cache
+
     valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
     if not os.path.exists(image_dir):
         return []
         
     images = []
-    for root, dirs, files in os.walk(image_dir):
-        # Skip removed directory if it's inside image_dir
-        if 'removed' in root:
-            continue
-        for f in files:
-            if f.lower().endswith(valid_extensions):
-                # If we are in a subdirectory, include it in the name relative to image_dir
-                rel_path = os.path.relpath(os.path.join(root, f), image_dir)
-                images.append(rel_path)
+    
+    def _fast_scan(path):
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    if entry.is_file():
+                        if entry.name.lower().endswith(valid_extensions):
+                            rel_path = os.path.relpath(entry.path, image_dir)
+                            images.append(rel_path)
+                    elif entry.is_dir():
+                        if entry.name != 'removed':
+                            _fast_scan(entry.path)
+        except Exception:
+            pass
+
+    _fast_scan(image_dir)
+    
+    _image_cache = images
+    _image_cache_time = now
     return images
 
 def is_hour_in_range(hour, start, end):

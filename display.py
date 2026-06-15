@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageChops, ImageOps
 import math
 import threading
+import gc
 import common
 
 # Setup Logging using common library
@@ -80,7 +81,17 @@ last_config_mtime = load_config_values()
 _last_state_data = None
 _last_state_time = 0
 
+# Use shared objects from common.py
+PROJECT_ROOT = common.PROJECT_ROOT
+CONFIG_FILE = common.CONFIG_FILE
 STATE_FILE = common.STATE_FILE
+MANUAL_ON_FILE = common.MANUAL_ON_FILE
+MANUAL_OFF_FILE = common.MANUAL_OFF_FILE
+NEXT_IMAGE_FILE = common.NEXT_IMAGE_FILE
+PREV_IMAGE_FILE = common.PREV_IMAGE_FILE
+NEXT_GROUP_FILE = common.NEXT_GROUP_FILE
+SHOW_IMAGE_FILE = common.SHOW_IMAGE_FILE
+
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 WIDTH = 0
@@ -134,10 +145,9 @@ def update_state(type="image", img_path=None):
         state = state_data.copy()
         state["last_update"] = datetime.now().isoformat()
         
-        fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(STATE_FILE), prefix="state_tmp_")
-        with os.fdopen(fd, 'w') as f:
+        # Writing directly to SHM (RAM) is already fast, no need for mkstemp
+        with open(STATE_FILE, 'w') as f:
             json.dump(state, f)
-        os.replace(temp_path, STATE_FILE)
         
         _last_state_data = state_data
         _last_state_time = current_time
@@ -321,19 +331,38 @@ def write_to_fb(fb, bg):
 
 def display_image(fb, img_path, save=True):
     try:
-        img = Image.open(img_path)
-        img = ImageOps.exif_transpose(img)
-        img_width, img_height = img.size
-        scale = min(WIDTH / img_width, HEIGHT / img_height)
-        new_width, new_height = int(img_width * scale), int(img_height * scale)
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        bg = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
-        bg.paste(img, ((WIDTH - new_width) // 2, (HEIGHT - new_height) // 2))
-        if SHOW_TIME:
-            draw_time(bg, TIME_FORMAT, TIME_FONT_SIZE)
-        write_to_fb(fb, bg)
-        update_state("image", img_path)
-        update_history(img_path, save=save)
+        # Load and handle orientation with minimum I/O
+        with Image.open(img_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img_width, img_height = img.size
+            
+            # Use faster scaling if images are significantly larger than screen
+            scale = min(WIDTH / img_width, HEIGHT / img_height)
+            new_width, new_height = int(img_width * scale), int(img_height * scale)
+            
+            # Memory-efficient scaling: if we're downscaling a lot (>2x), do a fast pre-scale
+            if scale < 0.5:
+                # Fast pre-scale to 2x the target size
+                img = img.resize((new_width * 2, new_height * 2), Image.Resampling.NEAREST)
+            
+            # Final high-quality resize
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            bg = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+            bg.paste(img, ((WIDTH - new_width) // 2, (HEIGHT - new_height) // 2))
+            
+            # Drawing time directly on the resized image is slightly more memory efficient
+            if SHOW_TIME:
+                draw_time(bg, TIME_FORMAT, TIME_FONT_SIZE)
+                
+            write_to_fb(fb, bg)
+            update_state("image", img_path)
+            update_history(img_path, save=save)
+            
+            # Explicit cleanup for large image objects
+            del img
+            del bg
+            gc.collect()
     except Exception as e:
         logger.error(f"Error displaying {img_path}: {e}")
 def display_hourly_clock(fb, current_image=None, img_path=None):
@@ -355,45 +384,7 @@ def display_hourly_clock(fb, current_image=None, img_path=None):
 
 
 def get_images():
-    valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
-    imgs = []
-
-    # Sources: Google Photos synced albums + Configured local pictures folder
-    sources = [IMAGE_DIR]
-
-    selected = []
-    if SELECTED_FOLDERS == 'none':
-        return [] # Explicitly return no images
-    elif SELECTED_FOLDERS != 'all':
-        selected = [s.strip() for s in SELECTED_FOLDERS.split(',')]
-
-    for source in sources:
-        if not os.path.exists(source): continue
-
-        for root, dirs, files in os.walk(source):
-            # Get relative path from source to determine if this folder is selected
-            rel_path = os.path.relpath(root, source)
-
-            if SELECTED_FOLDERS != 'all':
-                # Check if rel_path or any of its parents are in selected
-                is_selected = False
-                if rel_path == '.':
-                    # If 'none' or specific folders are selected, root images are excluded
-                    # unless explicitly included.
-                    pass
-                else:
-                    for s in selected:
-                        if rel_path == s or rel_path.startswith(s + os.sep):
-                            is_selected = True
-                            break
-
-                if not is_selected:
-                    continue
-
-            for f in files:
-                if f.lower().endswith(valid_extensions):
-                    imgs.append(os.path.join(root, f))
-    return imgs
+    return common.get_images()
 
 def get_random_image_index(images):
 
@@ -413,7 +404,7 @@ def get_random_image_index(images):
     for i in range(min(len(indices), 10)):
         idx = indices[i]
         try:
-            rel_path = os.path.relpath(images[idx], common.PROJECT_ROOT)
+            rel_path = images[idx]
             if rel_path not in recent_paths:
                 return idx
         except:
@@ -441,17 +432,18 @@ def main():
     logger.info("Startup: Forcing screen ON")
     set_screen_state(True)
     was_blanked = False
-    if os.path.exists("manual_off.tmp"):
-        os.remove("manual_off.tmp")
-    if os.path.exists("manual_on.tmp"):
-        os.remove("manual_on.tmp")
+    if os.path.exists(MANUAL_OFF_FILE):
+        os.remove(MANUAL_OFF_FILE)
+    if os.path.exists(MANUAL_ON_FILE):
+        os.remove(MANUAL_ON_FILE)
 
     load_fb_info()
     with open(FB_DEV, "wb") as fb:
         bg = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
         write_to_fb(fb, bg)
     images = get_images()
-    if not images: return
+    if not images: 
+        logger.warning("No images found at startup")
 
     def signal_handler(sig, frame):
         set_cursor(True)
@@ -478,46 +470,55 @@ def main():
     last_display_time = 0
     last_rotation_time = 0
     config_mtime = last_config_mtime
-    dir_mtime = os.path.getmtime(IMAGE_DIR)
+    dir_mtime = os.path.getmtime(IMAGE_DIR) if os.path.exists(IMAGE_DIR) else 0
     was_periodic = False
     manual_prev = False
 
     with open(FB_DEV, "wb") as fb:
         while True:
-            # Check for config or directory changes
-            try:
-                # Check for config changes
-                current_config_mtime = os.path.getmtime('config.ini')
-                if current_config_mtime > config_mtime:
-                    old_image_dir = IMAGE_DIR
-                    old_selected = SELECTED_FOLDERS
-                    config_mtime = load_config_values()
-                    last_display_time = 0 # Force refresh on ANY config change
-                    last_rotation_time = 0
-                    if IMAGE_DIR != old_image_dir or SELECTED_FOLDERS != old_selected:
-                        images = get_images()
-                        images.sort()
-                        idx = get_random_image_index(images)
-                        images_shown_in_group = 0
+            # Throttle config checks
+            now_time = time.time()
+            if now_time - config_mtime > 30:
+                try:
+                    current_config_mtime = os.path.getmtime('config.ini')
+                    if current_config_mtime > config_mtime:
+                        old_image_dir = IMAGE_DIR
+                        old_selected = SELECTED_FOLDERS
+                        config_mtime = load_config_values()
+                        last_display_time = 0 # Force refresh on ANY config change
+                        last_rotation_time = 0
+                        if IMAGE_DIR != old_image_dir or SELECTED_FOLDERS != old_selected:
+                            images = get_images()
+                            images.sort()
+                            idx = get_random_image_index(images)
+                            images_shown_in_group = 0
+                    else:
+                        # Update our last-checked timestamp even if mtime didn't change
+                        config_mtime = now_time 
+                except:
+                    pass
                 
-                # Check for new images
-                current_dir_mtime = os.path.getmtime(IMAGE_DIR)
-                if current_dir_mtime > dir_mtime:
-                    dir_mtime = current_dir_mtime
-                    old_len = len(images)
-                    images = get_images()
-                    images.sort()
-                    logger.info(f"New images detected, refreshed list. Count: {len(images)}")
-                    if len(images) != old_len:
-                        idx = get_random_image_index(images)
-                        images_shown_in_group = 0
+            # Check for new images less frequently
+            if now_time - dir_mtime > 300: # Every 5 mins
+                try:
+                    if os.path.exists(IMAGE_DIR):
+                        current_dir_mtime = os.path.getmtime(IMAGE_DIR)
+                        if current_dir_mtime > dir_mtime:
+                            dir_mtime = current_dir_mtime
+                            old_len = len(images)
+                            images = get_images()
+                            images.sort()
+                            logger.info(f"New images detected, refreshed list. Count: {len(images)}")
+                            if len(images) != old_len:
+                                idx = get_random_image_index(images)
+                                images_shown_in_group = 0
+                except:
+                    pass
 
-            except: pass
-            
             # 1. Determine desired screen state
-            config = get_config()
-            is_manually_off = os.path.exists("manual_off.tmp")
-            is_manually_on = os.path.exists("manual_on.tmp")
+            # Use cached values from load_config_values() instead of get_config()
+            is_manually_off = os.path.exists(MANUAL_OFF_FILE)
+            is_manually_on = os.path.exists(MANUAL_ON_FILE)
             
             # Priority 1: Manual OFF
             if is_manually_off:
@@ -570,11 +571,11 @@ def main():
                 continue
 
             # Check for navigation commands (Move here for better responsiveness)
-            if os.path.exists("show_image.tmp"):
+            if os.path.exists(SHOW_IMAGE_FILE):
                 try:
-                    with open("show_image.tmp", "r") as f:
+                    with open(SHOW_IMAGE_FILE, "r") as f:
                         show_path = f.read().strip()
-                    os.remove("show_image.tmp")
+                    os.remove(SHOW_IMAGE_FILE)
                     logger.info(f"Manual 'Show' requested for: {show_path}")
                     if show_path and os.path.exists(show_path):
                         display_image(fb, show_path, save=True)
@@ -586,25 +587,25 @@ def main():
                 except Exception as e:
                     logger.error(f"Error handling show_image.tmp: {e}")
             
-            if os.path.exists("next_group.tmp"):
-                os.remove("next_group.tmp")
+            if os.path.exists(NEXT_GROUP_FILE):
+                os.remove(NEXT_GROUP_FILE)
                 manual_prev = False
                 if images:
                     idx = get_random_image_index(images)
                     images_shown_in_group = 0
-                    display_image(fb, images[idx], save=True)
+                    display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=True)
                     last_display_time = time.time()
                     last_rotation_time = time.time()
-            elif os.path.exists("next_image.tmp"):
-                os.remove("next_image.tmp")
+            elif os.path.exists(NEXT_IMAGE_FILE):
+                os.remove(NEXT_IMAGE_FILE)
                 manual_prev = False
                 if images:
                     idx = (idx + 1) % len(images)
-                    display_image(fb, images[idx], save=True)
+                    display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=True)
                     last_display_time = time.time()
                     last_rotation_time = time.time()
-            elif os.path.exists("prev_image.tmp"):
-                os.remove("prev_image.tmp")
+            elif os.path.exists(PREV_IMAGE_FILE):
+                os.remove(PREV_IMAGE_FILE)
                 manual_prev = True
                 if images:
                     # Try to use history to find the previous image
@@ -630,10 +631,11 @@ def main():
                     if not navigated:
                         idx = (idx - 1) % len(images)
                     
-                    display_image(fb, images[idx], save=False)
+                    display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=False)
                     last_display_time = time.time()
                     last_rotation_time = time.time()
 
+            now = datetime.now()
             # Hourly/Periodic/Scheduled clock check
             is_periodic = SHOW_PERIODIC and ((0 <= now.minute < 3) or (30 <= now.minute < 33))
             
@@ -660,7 +662,7 @@ def main():
                     current_image_obj = None
                     if images and idx < len(images):
                         try:
-                            current_image_obj = Image.open(images[idx])
+                            current_image_obj = Image.open(os.path.join(IMAGE_DIR, images[idx]))
                             current_image_obj = ImageOps.exif_transpose(current_image_obj)
                             img_width, img_height = current_image_obj.size
                             scale = min(WIDTH / img_width, HEIGHT / img_height)
@@ -679,7 +681,7 @@ def main():
                     logger.info(f"Displaying hourly clock at {now.hour}:00")
                     start_time = time.time()
                     while time.time() - start_time < 10:
-                        display_hourly_clock(fb, current_image_obj, images[idx] if images and idx < len(images) else None)
+                        display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
                         time.sleep(0.05)
                     last_display_time = time.time() # Update display time
                     last_rotation_time = time.time() # Reset rotation time after hourly clock too
@@ -687,7 +689,7 @@ def main():
 
                 if is_periodic or is_scheduled:
                     was_periodic = True
-                    display_hourly_clock(fb, current_image_obj, images[idx] if images and idx < len(images) else None)
+                    display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
                     # Don't use 'continue' here, allow the rest of the loop to run
                     # so that 'should_refresh' logic can trigger image rotation.
                     # We use a small sleep to maintain responsiveness for animations
@@ -727,7 +729,7 @@ def main():
                 should_refresh = True
 
             if should_refresh and images:
-                display_image(fb, images[idx], save=True)
+                display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=True)
                 last_display_time = time.time()
                 last_minute = now.minute
             

@@ -30,6 +30,12 @@ PROJECT_ROOT = common.PROJECT_ROOT
 CONFIG_FILE = common.CONFIG_FILE
 STATE_FILE = common.STATE_FILE
 REMOVE_DIR = common.REMOVE_DIR
+MANUAL_ON_FILE = common.MANUAL_ON_FILE
+MANUAL_OFF_FILE = common.MANUAL_OFF_FILE
+NEXT_IMAGE_FILE = common.NEXT_IMAGE_FILE
+PREV_IMAGE_FILE = common.PREV_IMAGE_FILE
+NEXT_GROUP_FILE = common.NEXT_GROUP_FILE
+SHOW_IMAGE_FILE = common.SHOW_IMAGE_FILE
 
 get_config = common.get_config
 set_screen_state = common.set_screen_state
@@ -90,7 +96,7 @@ def on_proximity_detected():
     
     if current_hw_state == "off":
         # Check manual off override
-        if os.path.exists("manual_off.tmp"):
+        if os.path.exists(MANUAL_OFF_FILE):
             logging.info("Proximity detected, but screen is manually set to OFF.")
             return
 
@@ -130,6 +136,11 @@ def presence_detection_thread():
                 presence_data["ble_devices_in_range"] = proximity_scanner.devices_in_range
 
             if motion_enabled and camera_enabled:
+                # Optimized motion check: Only if not manually OFF and not scheduled OFF
+                if os.path.exists(MANUAL_OFF_FILE) or common.is_scheduled_off():
+                    time.sleep(10 if weak_machine else 2)
+                    continue
+
                 sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
                 auto_sens = config.getboolean('MOTION', 'auto_sensitivity', fallback=False)
                 
@@ -177,7 +188,7 @@ def presence_detection_thread():
                                 presence_data["last_presence_time"] = time.time()
                                 if current_hw_state == "off":
                                     # Check manual off override and schedule
-                                    if not os.path.exists("manual_off.tmp") and not common.is_scheduled_off():
+                                    if not os.path.exists(MANUAL_OFF_FILE) and not common.is_scheduled_off():
                                         set_screen_state(True)
                                         presence_data["screen_state"] = "on"
                                         common.notify_display_process()
@@ -201,7 +212,7 @@ def presence_detection_thread():
             if time.time() - presence_data["last_presence_time"] > effective_timeout:
                 if current_hw_state == "on":
                     # Check manual override
-                    if not os.path.exists("manual_on.tmp"):
+                    if not os.path.exists(MANUAL_ON_FILE):
                         logging.info(f"Presence timeout ({effective_timeout}s). Turning screen OFF.")
                         set_screen_state(False)
                         presence_data["screen_state"] = "off"
@@ -432,7 +443,7 @@ def remove_image():
 
             # If it was the current image, trigger next
             if is_current:
-                with open("next_image.tmp", "w") as f:
+                with open(NEXT_IMAGE_FILE, "w") as f:
                     f.write("next")
 
             return jsonify({"status": "success", "message": f"Moved {filename} to {remove_dir}"})
@@ -449,22 +460,23 @@ def get_folders():
     folders = []
     all_folders = []
     if os.path.exists(image_dir):
-        # Walk the directory tree to find all subfolders
-        for root, dirs, files in os.walk(image_dir):
-            for d in dirs:
-                # Calculate the relative path from the image_dir
-                full_path = os.path.join(root, d)
-                rel_path = os.path.relpath(full_path, image_dir)
-                
-                all_folders.append(rel_path)
-
-                # Strictly filter out google_photos folders - they are managed separately for the tree view
-                # Check if 'google_photos' or 'google-photos' is any part of the path
-                path_parts = rel_path.split(os.sep)
-                if 'google_photos' in path_parts or 'google-photos' in path_parts:
-                    continue
-                    
-                folders.append(rel_path)
+        def _scan_folders(p):
+            try:
+                with os.scandir(p) as it:
+                    for entry in it:
+                        if entry.is_dir(follow_symlinks=False):
+                            rel_path = os.path.relpath(entry.path, image_dir)
+                            all_folders.append(rel_path)
+                            
+                            # Strictly filter out google_photos folders
+                            path_parts = rel_path.split(os.sep)
+                            if 'google_photos' not in path_parts and 'google-photos' not in path_parts:
+                                folders.append(rel_path)
+                            
+                            _scan_folders(entry.path)
+            except:
+                pass
+        _scan_folders(image_dir)
     
     return jsonify({
         "available_folders": sorted(folders),
@@ -511,7 +523,7 @@ def show_image():
             return jsonify({"error": f"Image {filename} not found in {image_dir}"}), 404
 
     # Write to a trigger file that display.py monitors
-    with open("show_image.tmp", "w") as f:
+    with open(SHOW_IMAGE_FILE, "w") as f:
         f.write(image_path)
 
     return jsonify({"status": "success"})
@@ -593,17 +605,17 @@ def restart_frame():
 
 @app.route('/api/next', methods=['POST'])
 def next_image():
-    with open("next_image.tmp", "w") as f: f.write("next")
+    with open(NEXT_IMAGE_FILE, "w") as f: f.write("next")
     return jsonify({"status": "success"})
 
 @app.route('/api/next-group', methods=['POST'])
 def next_group():
-    with open("next_group.tmp", "w") as f: f.write("next")
+    with open(NEXT_GROUP_FILE, "w") as f: f.write("next")
     return jsonify({"status": "success"})
 
 @app.route('/api/prev', methods=['POST'])
 def prev_image():
-    with open("prev_image.tmp", "w") as f: f.write("prev")
+    with open(PREV_IMAGE_FILE, "w") as f: f.write("prev")
     return jsonify({"status": "success"})
 
 @app.route('/current')
@@ -621,12 +633,26 @@ def serve_image(filename):
     if os.path.exists(full_path) and os.path.isfile(full_path):
         return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
         
-    # Fallback to searching (for backward compatibility or if only filename is provided)
-    paths = [image_dir, remove_dir]
-    for p in paths:
-        for root, dirs, files in os.walk(p):
-            if filename in files:
-                return send_from_directory(root, filename)
+    # Fallback to checking the cached image list
+    all_images = common.get_images()
+    # Check if filename matches the end of any path or the filename exactly
+    for rel_path in all_images:
+        if rel_path == filename or os.path.basename(rel_path) == filename:
+            full_path = os.path.join(image_dir, rel_path)
+            return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path))
+
+    # Also check removed_dir (less common, so we can do a quick check)
+    if os.path.exists(remove_dir):
+        # We'll do a quick check for the filename in remove_dir without a full walk if possible,
+        # but since removed images are structure-preserved, we might need a walk.
+        # However, this is a fallback case.
+        for root, dirs, files in os.walk(remove_dir):
+            if filename in files or any(filename == os.path.relpath(os.path.join(root, f), remove_dir) for f in files):
+                 # Find the exact match
+                 for f in files:
+                     if f == filename or os.path.relpath(os.path.join(root, f), remove_dir) == filename:
+                         return send_from_directory(root, f)
+
     return f"File {filename} not found", 404
 
 def _restart_frame_task():
@@ -650,14 +676,14 @@ def screen_control():
             on = (state == 'on')
             if on:
                 # Manual ON: Create override file, remove OFF override
-                with open("manual_on.tmp", "w") as f: f.write("1")
-                if os.path.exists("manual_off.tmp"):
-                    os.remove("manual_off.tmp")
+                with open(MANUAL_ON_FILE, "w") as f: f.write("1")
+                if os.path.exists(MANUAL_OFF_FILE):
+                    os.remove(MANUAL_OFF_FILE)
             else:
                 # Manual OFF: Create override file, remove ON override
-                with open("manual_off.tmp", "w") as f: f.write("1")
-                if os.path.exists("manual_on.tmp"):
-                    os.remove("manual_on.tmp")
+                with open(MANUAL_OFF_FILE, "w") as f: f.write("1")
+                if os.path.exists(MANUAL_ON_FILE):
+                    os.remove(MANUAL_ON_FILE)
 
             set_screen_state(on)
             presence_data["screen_state"] = state
@@ -789,11 +815,16 @@ def get_dir_size_mb(path):
     total = 0
     if os.path.exists(path):
         try:
-            for root, dirs, files in os.walk(path):
-                for f in files:
-                    fp = os.path.join(root, f)
-                    if not os.path.islink(fp):
-                        total += os.path.getsize(fp)
+            def _scan_size(p):
+                size = 0
+                with os.scandir(p) as it:
+                    for entry in it:
+                        if entry.is_file(follow_symlinks=False):
+                            size += entry.stat().st_size
+                        elif entry.is_dir(follow_symlinks=False):
+                            size += _scan_size(entry.path)
+                return size
+            total = _scan_size(path)
         except:
             pass
     return round(total / (2**20), 2)
