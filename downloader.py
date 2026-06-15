@@ -112,16 +112,27 @@ def check_storage_guardrail():
     if not os.path.exists(image_dir):
         return
 
-    for root, _, files in os.walk(image_dir):
-        for f in files:
-            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
-                full_path = os.path.join(root, f)
-                if full_path == current_image_path:
-                    continue
-                try:
-                    all_images.append((full_path, os.path.getmtime(full_path)))
-                except:
-                    continue
+    valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
+
+    def _scan_for_eviction(path):
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    if entry.is_file():
+                        if entry.name.lower().endswith(valid_extensions):
+                            full_path = entry.path
+                            if full_path == current_image_path:
+                                continue
+                            try:
+                                all_images.append((full_path, entry.stat().st_mtime))
+                            except:
+                                continue
+                    elif entry.is_dir():
+                        _scan_for_eviction(entry.path)
+        except:
+            pass
+
+    _scan_for_eviction(image_dir)
     
     # Sort by mtime (oldest first)
     all_images.sort(key=lambda x: x[1])
@@ -288,7 +299,7 @@ def download_album(album_id, url, output_dir, force_fast=False):
                                         chunk_elapsed = time.time() - chunk_start_time
                                         
                                         f.write(chunk)
-                                        f.flush() # Prevent massive RAM spikes to SD card
+                                        # Removed f.flush() to reduce write amplification on MicroSD
                                         
                                         bytes_downloaded += len(chunk)
                                         

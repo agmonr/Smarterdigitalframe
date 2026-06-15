@@ -28,6 +28,15 @@ class ProximityScanner:
         self.loop = None
         self.devices_in_range = 0
         self.logger = common.setup_logger('proximity', 'proximity.log')
+        self._config_cache = None
+        self._config_last_check = 0
+
+    def get_cached_config(self):
+        now = time.time()
+        if self._config_cache is None or now - self._config_last_check > 30:
+            self._config_cache = common.get_config()
+            self._config_last_check = now
+        return self._config_cache
 
     def is_device_dynamic(self, addr, name, rssi, config, advertisement_data=None):
         stable_threshold = config.getfloat('PROXIMITY', 'stable_threshold', fallback=0.5)
@@ -110,19 +119,26 @@ class ProximityScanner:
 
     def ble_callback(self, device, advertisement_data):
         try:
-            config = common.get_config()
+            config = self.get_cached_config()
             if not config.getboolean('PROXIMITY', 'enabled', fallback=False):
+                return
+
+            # Fast path: check if address is already in registry and ignored
+            addr = device.address
+            if addr in device_registry and not device_registry[addr].get("is_dynamic", True):
                 return
 
             dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
             # Update registry even if below threshold to keep track of devices in range vs out of range
             is_dynamic = self.is_device_dynamic(device.address, device.name, advertisement_data.rssi, config, advertisement_data)
             
+            if not is_dynamic:
+                return
+
             distance = rssi_to_distance(advertisement_data.rssi)
             if distance <= dist_threshold:
-                if is_dynamic:
-                    self.logger.debug(f"Dynamic Device Detected: {device.address} ({device.name}) | Distance: {distance}m (RSSI: {advertisement_data.rssi})")
-                    self.callback_on_detection()
+                self.logger.debug(f"Dynamic Device Detected: {device.address} ({device.name}) | Distance: {distance}m (RSSI: {advertisement_data.rssi})")
+                self.callback_on_detection()
         except Exception as e:
             self.logger.error(f"Error in ble_callback: {e}")
 
@@ -145,22 +161,22 @@ class ProximityScanner:
         self.logger.info("BleakScanner stopped")
 
     def update_device_count(self):
-        config = common.get_config()
+        config = self.get_cached_config()
         dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
         now = datetime.now()
         count = 0
         for addr, data in device_registry.items():
             # Device seen in last 30 seconds and last distance was below threshold
             time_diff = (now - data["last_seen"]).total_seconds()
-            last_rssi = data["rssi_history"][-1]
-            distance = rssi_to_distance(last_rssi)
             if time_diff < 30:
+                last_rssi = data["rssi_history"][-1]
+                distance = rssi_to_distance(last_rssi)
                 if distance <= dist_threshold and data.get("is_dynamic", True):
                     count += 1
         self.devices_in_range = count
 
     def get_detailed_devices(self):
-        config = common.get_config()
+        config = self.get_cached_config()
         dist_threshold = config.getfloat('PROXIMITY', 'distance_threshold', fallback=4.0)
         now = datetime.now()
         detailed_list = []
@@ -203,7 +219,7 @@ class ProximityScanner:
         self.logger.info(f"Cleaned up {len(to_delete)} devices from registry")
 
     def start(self):
-        config = common.get_config()
+        config = self.get_cached_config()
         if not config.getboolean('PROXIMITY', 'enabled', fallback=False):
             self.logger.info("Proximity detection is disabled in config. Not starting scanner.")
             return
