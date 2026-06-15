@@ -110,61 +110,6 @@
             font-size: 0.85rem;
         }
     }
-
-    /* Screen Status Styles */
-    .screen-status-container {
-        margin-left: auto;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.6rem 0.8rem;
-        border-radius: 0.375rem;
-        cursor: pointer;
-        font-size: 0.85rem;
-        color: var(--nav-text);
-        transition: all 0.2s ease;
-        user-select: none;
-    }
-
-    .screen-status-container:hover {
-        background-color: var(--nav-hover);
-    }
-
-    .screen-icon {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background-color: #9ca3af;
-        display: inline-block;
-        box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .screen-icon.on {
-        background-color: #10b981;
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-    }
-
-    .screen-icon.off {
-        background-color: #ef4444;
-        box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-    }
-
-    .screen-text {
-        font-weight: 500;
-        letter-spacing: 0.01em;
-    }
-
-    @media (max-width: 900px) {
-        .screen-status-container {
-            margin-left: 0;
-            order: -1; /* Move to start on small screens if wrapped */
-            width: 100%;
-            justify-content: center;
-            border-bottom: 1px solid #f3f4f6;
-            margin-bottom: 0.25rem;
-        }
-    }
 </style>
 
 <div class="top-nav" id="main-nav">
@@ -188,10 +133,6 @@
             <a href="/system">Status</a>
             <a href="/network">Network</a>
         </div>
-    </div>
-    <div id="screen-status-container" class="screen-status-container" title="Click to toggle screen ON/OFF">
-        <span id="screen-icon" class="screen-icon"></span>
-        <span id="screen-text" class="screen-text">Screen</span>
     </div>
 </div>
 
@@ -229,56 +170,5 @@
         } catch (err) {
             console.error("Error checking camera status", err);
         }
-
-        // Screen Status Logic
-        const screenIcon = document.getElementById('screen-icon');
-        const screenText = document.getElementById('screen-text');
-        const screenContainer = document.getElementById('screen-status-container');
-
-        async function updateScreenStatus() {
-            try {
-                const response = await fetch('/api/screen');
-                const data = await response.json();
-                if (data.status === 'success') {
-                    const isOn = data.state === 'on';
-                    screenIcon.className = 'screen-icon ' + (isOn ? 'on' : 'off');
-                    screenText.textContent = 'Screen ' + (isOn ? 'On' : 'Off');
-                }
-            } catch (err) {
-                console.error("Error fetching screen status", err);
-            }
-        }
-
-        // Initial check
-        updateScreenStatus();
-
-        // Periodic check (every 10 seconds)
-        setInterval(updateScreenStatus, 10000);
-
-        // Click to toggle
-        screenContainer.addEventListener('click', async () => {
-            const isCurrentlyOn = screenIcon.classList.contains('on');
-            const newState = isCurrentlyOn ? 'off' : 'on';
-            
-            // Optimistic update
-            screenIcon.className = 'screen-icon ' + newState;
-            screenText.textContent = 'Screen ' + (newState === 'on' ? 'On' : 'Off');
-            
-            try {
-                const response = await fetch('/api/screen', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ state: newState })
-                });
-                const data = await response.json();
-                if (data.status !== 'success') {
-                    // Revert on failure
-                    updateScreenStatus();
-                }
-            } catch (err) {
-                console.error("Error toggling screen", err);
-                updateScreenStatus();
-            }
-        });
     });
 </script>
