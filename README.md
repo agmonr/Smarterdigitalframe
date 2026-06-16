@@ -6,10 +6,10 @@ Built with a focus on **system integrity** and **smooth aesthetics**, DigitalFra
 
 [<img src="examples/Screenshot_20260616_113619_Firefox.jpg" width="400">](https://github.com/agmonr/SmartdigitalFrame/)
 [<img src="examples/Screenshot_20260616_113639_Firefox.jpg" width="400">](https://github.com/agmonr/SmartdigitalFrame/)
-
+### more...
 
 [<img src="examples/Screenshot_20260616_113649_Firefox.jpg" width="400">](https://github.com/agmonr/SmartdigitalFrame/)
-[<img src="examples/Screenshot_20260616_113649_Firefox.jpg" width="400">](https://github.com/agmonr/SmartdigitalFrame/)
+[<img src="examples/IMG-20260521-WA0001.jpg" width="400">](https://github.com/agmonr/SmartdigitalFrame/)
 
 
 
