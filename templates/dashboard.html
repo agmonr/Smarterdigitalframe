@@ -71,8 +71,9 @@
             <h3>Current State</h3>
             <div id="display-info" style="font-size: 16px; margin-bottom: 10px; word-break: break-all;">Loading...</div>
             <img id="display-preview" class="current-image" src="" alt="Current Display" style="display: none;">
-            <div style="margin-top: 15px;">
+            <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;">
                 <a id="full-image-link" href="/current" target="_blank" style="color: #3498db; text-decoration: none; font-weight: bold; display: none;">Open Full Screen Viewer &rarr;</a>
+                <a id="download-link" href="#" download style="color: #2ecc71; text-decoration: none; font-weight: bold; display: none;">Download Image &darr;</a>
             </div>
             <div class="refresh-info">Auto-refreshing every 2 seconds</div>
         </div>
@@ -172,12 +173,14 @@
                 const info = document.getElementById('display-info');
                 const preview = document.getElementById('display-preview');
                 const link = document.getElementById('full-image-link');
+                const downloadLink = document.getElementById('download-link');
                 const removeBtn = document.getElementById('btn-remove');
 
                 if (state.error) {
                     info.textContent = "System Status: " + state.error;
                     preview.style.display = "none";
                     link.style.display = "none";
+                    downloadLink.style.display = "none";
                     removeBtn.style.display = "none";
                     return;
                 }
@@ -188,18 +191,22 @@
                     preview.style.display = "block";
                     preview.src = `/api/image/${state.current_image}?t=${Date.now()}`;
                     link.style.display = "inline-block";
+                    downloadLink.style.display = "inline-block";
+                    downloadLink.href = `/api/download/${encodeURIComponent(state.current_image)}`;
                     removeBtn.style.display = "block";
                 } else if (state.type === "clock") {
                     currentImagePath = "";
                     info.textContent = "Displaying Clock";
                     preview.style.display = "none";
                     link.style.display = "none";
+                    downloadLink.style.display = "none";
                     removeBtn.style.display = "none";
                 } else {
                     currentImagePath = "";
                     info.textContent = "System Idle";
                     preview.style.display = "none";
                     link.style.display = "none";
+                    downloadLink.style.display = "none";
                     removeBtn.style.display = "none";
                 }
             } catch (e) {

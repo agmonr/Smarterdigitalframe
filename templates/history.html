@@ -218,6 +218,7 @@
 
                 <div id="preview-controls" style="display: none;" class="controls-area">
                     <button class="show" onclick="showSelected()">Show on Frame</button>
+                    <a id="download-link" href="#" download style="display: block; text-align: center; background: #2ecc71; color: white; padding: 12px; border-radius: 6px; text-decoration: none; font-weight: 600; margin-bottom: 10px; max-width: 300px; margin-left: auto; margin-right: auto;">Download Image &darr;</a>
                     <button class="remove" onclick="removeSelected()">Remove Image</button>
                     <p style="font-size: 11px; color: #95a5a6; margin-top: 12px; margin-bottom: 0;">This moves the image to the <strong>removed</strong> folder.</p>
                 </div>
@@ -353,9 +354,11 @@
             document.getElementById('no-selection').style.display = 'none';
             
             const img = document.getElementById('preview-img');
+            const downloadLink = document.getElementById('download-link');
             const imagePath = path || filename;
             img.src = `${API_BASE}/image/${encodeURIComponent(imagePath)}`;
             img.style.display = 'block';
+            downloadLink.href = `${API_BASE}/download/${encodeURIComponent(imagePath)}`;
             document.getElementById('preview-controls').style.display = 'block';
             
             // Scroll to top of preview on mobile only if clicked

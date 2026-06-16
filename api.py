@@ -655,6 +655,31 @@ def serve_image(filename):
 
     return f"File {filename} not found", 404
 
+@app.route('/api/download/<path:filename>')
+def download_image(filename):
+    config = get_config()
+    image_dir = common.get_image_dir()
+    # Try to find the file just like serve_image does
+    full_path = os.path.join(image_dir, filename)
+    if not (os.path.exists(full_path) and os.path.isfile(full_path)):
+        # Check cached list
+        all_images = common.get_images()
+        found = False
+        for rel_path in all_images:
+            if rel_path == filename or os.path.basename(rel_path) == filename:
+                full_path = os.path.join(image_dir, rel_path)
+                found = True
+                break
+        
+        if not found:
+             # Check captures dir for camera downloads
+             captures_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
+             full_path = os.path.join(captures_dir, filename)
+             if not (os.path.exists(full_path) and os.path.isfile(full_path)):
+                 return f"File {filename} not found for download", 404
+
+    return send_from_directory(os.path.dirname(full_path), os.path.basename(full_path), as_attachment=True)
+
 def _restart_frame_task():
     """Wait briefly and restart the frame service."""
     time.sleep(1)
@@ -778,7 +803,11 @@ def camera_feed():
         with camera_lock:
             result = subprocess.run(cmd, capture_output=True)
         if result.returncode == 0:
-            return Response(result.stdout, mimetype='image/jpeg')
+            headers = {}
+            if request.args.get('download') == '1':
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                headers["Content-Disposition"] = f"attachment; filename=capture_{timestamp}.jpg"
+            return Response(result.stdout, mimetype='image/jpeg', headers=headers)
         else:
             return f"Capture failed: {result.stderr.decode()}", 500
     except Exception as e:

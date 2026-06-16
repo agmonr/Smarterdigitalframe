@@ -37,6 +37,7 @@
             <div id="error-msg" class="error-message">Could not load camera feed. Make sure the camera is connected.</div>
             <div>
                 <button onclick="refreshImage()">Refresh Capture</button>
+                <a id="download-link" href="#" download style="display: none; background: #2ecc71; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 16px; margin-top: 10px; margin-left: 10px;">Download Capture &darr;</a>
             </div>
         </div>
         <div class="settings-card">
@@ -148,19 +149,28 @@
         function refreshImage() {
             const img = document.getElementById('camera-image');
             const errorMsg = document.getElementById('error-msg');
+            const downloadLink = document.getElementById('download-link');
+            const timestamp = new Date().getTime();
+            
             errorMsg.style.display = 'none';
             img.style.display = 'block';
-            img.src = '/api/camera_feed?t=' + new Date().getTime();
+            img.src = '/api/camera_feed?t=' + timestamp;
+            
+            downloadLink.style.display = 'inline-block';
+            downloadLink.href = '/api/camera_feed?download=1&t=' + timestamp;
         }
         function handleError() {
             const img = document.getElementById('camera-image');
             const errorMsg = document.getElementById('error-msg');
+            const downloadLink = document.getElementById('download-link');
+            
             img.style.display = 'none';
+            downloadLink.style.display = 'none';
             errorMsg.style.display = 'block';
             setTimeout(refreshImage, 5000);
         }
         checkCameraEnabled();
-        document.getElementById('camera-image').src = '/api/camera_feed';
+        refreshImage(); // Use the unified refresh function for initial load
         loadSettings(true);
         setInterval(() => loadSettings(false), 5000);
     </script>
