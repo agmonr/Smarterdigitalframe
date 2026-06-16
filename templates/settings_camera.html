@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Settings - Digital Frame</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { 
+            width: 95%; 
+            max-width: 800px; 
+            margin: 10px auto; 
+            background: white; 
+            padding: 15px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            box-sizing: border-box;
+        }
+        h1 { margin-top: 0; color: #2c3e50; font-size: 24px; text-align: center; }
+        h2 { color: #34495e; border-bottom: 1px solid #ecf0f1; padding-bottom: 5px; margin-top: 20px; font-size: 18px; }
+        h3 { color: #34495e; font-size: 16px; margin-top: 15px; margin-bottom: 10px; }
+        .form-group { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 3px; font-size: 14px; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
+        .info-text { font-size: 12px; color: #7f8c8d; margin-top: 2px; }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; }
+        .checkbox-group input { width: auto; }
+        
+        button { 
+            background: #2ecc71; 
+            color: white; 
+            border: none; 
+            padding: 14px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        /* Toast notification */
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #2ecc71; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 500; opacity: 0; transition: opacity 0.3s; z-index: 9999; }
+        .toast.show { opacity: 1; }
+        .toast.error { background: #e74c3c; }
+        
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .container { padding: 15px; }
+            h1 { font-size: 20px; }
+            h2 { font-size: 18px; margin-top: 20px; }
+            button { padding: 15px; font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+    {% include "nav.html" %}
+    <div class="container">
+        <h1>Camera Settings</h1>
+        
+        <div class="config-section">
+            <h2>Hardware Control</h2>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="camera-enabled" onchange="saveConfig()">
+                <label for="camera-enabled">Enable Camera Hardware</label>
+            </div>
+            <div class="info-text" style="margin-bottom: 10px;">Disabling the camera hardware will also disable motion detection and scheduled captures.</div>
+
+            <div class="form-group">
+                <label>Camera Video Resolution</label>
+                <input type="text" id="camera-resolution" placeholder="1024x768" onchange="saveConfig()">
+                <div class="info-text">Resolution for the live video stream.</div>
+            </div>
+
+            <h2>Motion Detection</h2>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="motion-enabled" onchange="saveMotionConfig()">
+                <label for="motion-enabled">Enable Motion Detection (Automatic Screen Control)</label>
+            </div>
+            <div class="form-group">
+                <label>Motion Timeout (seconds)</label>
+                <input type="number" id="motion-timeout" min="10" onchange="saveMotionConfig()">
+                <div class="info-text">How long to keep the screen on after motion is detected.</div>
+            </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="auto-sensitivity" onchange="saveMotionConfig()">
+                <label for="auto-sensitivity">Auto-sensitivity (adjust based on light)</label>
+            </div>
+            <div class="form-group">
+                <label>Sensitivity (1-100): <span id="sensitivity-val">50</span></label>
+                <input type="range" id="sensitivity" min="1" max="100" value="50" oninput="document.getElementById('sensitivity-val').innerText = this.value" onchange="saveMotionConfig()">
+            </div>
+
+            <h3>Low Light / Advanced</h3>
+            <div class="form-group">
+                <label>Shutter Speed (us, 0 for auto)</label>
+                <input type="number" id="shutter" min="0" onchange="saveMotionConfig()">
+                <div class="info-text">Higher values help in the dark but make movement blurry.</div>
+            </div>
+            <div class="form-group">
+                <label>Analog Gain (0 for auto)</label>
+                <input type="number" id="gain" min="0" onchange="saveMotionConfig()">
+            </div>
+
+            <h2>Scheduled Capture</h2>
+            <div class="form-group">
+                <label>Capture Schedule (Cron)</label>
+                <input type="text" id="camera-schedule" placeholder="0 0-6 * * *" onchange="saveConfig()">
+                <div class="info-text">e.g., "0 * * * *" for every hour.</div>
+            </div>
+            <div class="form-group">
+                <label>Capture Folder</label>
+                <input type="text" id="camera-capture-dir" placeholder="captures/" onchange="saveConfig()">
+            </div>
+            
+            <p class="info-text" style="text-align: center; margin-top: 15px;">Note: Changes to hardware settings may trigger a service restart.</p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const API_BASE = "/api";
+
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (isError ? ' error' : '');
+            setTimeout(() => { t.className = 'toast'; }, 2500);
+        }
+
+        async function loadConfig() {
+            try {
+                // Load General Config
+                const response = await fetch(`${API_BASE}/config`);
+                if (!response.ok) throw new Error('API Error');
+                const config = await response.json();
+
+                const cameraConfig = config.CAMERA || {};
+                document.getElementById('camera-enabled').checked = (cameraConfig.enabled && cameraConfig.enabled.toLowerCase() === 'true');
+                document.getElementById('camera-resolution').value = cameraConfig.video_resolution || '1024x768';
+                document.getElementById('camera-schedule').value = cameraConfig.schedule || '';
+                document.getElementById('camera-capture-dir').value = cameraConfig.imagedir_captures || 'captures/';
+
+                // Load Motion Config
+                const motionRes = await fetch(`${API_BASE}/motion`);
+                if (!motionRes.ok) throw new Error('Motion API Error');
+                const motionData = await motionRes.json();
+                
+                document.getElementById('motion-enabled').checked = motionData.enabled;
+                document.getElementById('auto-sensitivity').checked = motionData.auto_sensitivity;
+                document.getElementById('sensitivity').value = motionData.sensitivity;
+                document.getElementById('sensitivity-val').innerText = motionData.sensitivity;
+                document.getElementById('shutter').value = motionData.shutter || 0;
+                document.getElementById('gain').value = motionData.gain || 0;
+                document.getElementById('motion-timeout').value = motionData.timeout || 300;
+
+            } catch (e) {
+                console.error("Error loading config", e);
+            }
+        }
+
+        async function saveConfig() {
+            const data = {
+                CAMERA: {
+                    enabled: document.getElementById('camera-enabled').checked ? 'True' : 'False',
+                    video_resolution: document.getElementById('camera-resolution').value,
+                    schedule: document.getElementById('camera-schedule').value,
+                    imagedir_captures: document.getElementById('camera-capture-dir').value
+                }
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    showToast("Hardware settings saved!");
+                } else {
+                    showToast("Error saving hardware settings.", true);
+                }
+            } catch (e) {
+                showToast("Error saving configuration", true);
+            }
+        }
+
+        async function saveMotionConfig() {
+            const data = {
+                enabled: document.getElementById('motion-enabled').checked,
+                auto_sensitivity: document.getElementById('auto-sensitivity').checked,
+                sensitivity: parseInt(document.getElementById('sensitivity').value),
+                shutter: parseInt(document.getElementById('shutter').value),
+                gain: parseInt(document.getElementById('gain').value),
+                timeout: parseInt(document.getElementById('motion-timeout').value)
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/motion`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (response.ok) {
+                    showToast("Motion settings saved!");
+                } else {
+                    showToast("Error saving motion settings.", true);
+                }
+            } catch (e) {
+                showToast("Error saving configuration", true);
+            }
+        }
+
+        loadConfig();
+    </script>
+</body>
+</html>

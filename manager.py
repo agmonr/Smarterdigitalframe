@@ -36,6 +36,10 @@ def settings_page():
 def proximity_page():
     return render_template('ble_proximity.html')
 
+@app.route('/settings/camera')
+def camera_settings_page():
+    return render_template('settings_camera.html')
+
 @app.route('/system')
 def system_status_page():
     return render_template('status.html')

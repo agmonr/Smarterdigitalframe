@@ -178,29 +178,6 @@
                 <input type="number" id="screen-on-hour-2" min="0" max="23" onchange="saveConfig()">
             </div>
 
-            <h2>Camera Settings</h2>
-            <div class="form-group">
-                <label>Enable Camera</label>
-                <select id="camera-enabled" onchange="saveConfig()">
-                    <option value="True">Enabled</option>
-                    <option value="False">Disabled</option>
-                </select>
-                <div class="info-text">Disabling the camera will also disable motion detection.</div>
-            </div>
-            <div class="form-group">
-                <label>Camera Video Resolution</label>
-                <input type="text" id="camera-resolution" placeholder="1024x768" onchange="saveConfig()">
-            </div>
-            <div class="form-group">
-                <label>Capture Schedule (Cron)</label>
-                <input type="text" id="camera-schedule" placeholder="0 0-6 * * *" onchange="saveConfig()">
-            </div>
-            <div class="form-group">
-                <label>Motion Timeout (seconds)</label>
-                <input type="number" id="motion-timeout" min="10" onchange="saveConfig()">
-                <div class="info-text">How long to keep the screen on after motion is detected.</div>
-            </div>
-
             <h2>Network Settings (Access Point)</h2>
             <div class="form-group">
                 <label>Default AP Name (SSID)</label>
@@ -284,14 +261,6 @@
                 const schedConfig = config.SCHEDULE || {};
                 document.getElementById('schedule-enabled').value = (schedConfig.enabled && schedConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
 
-                const cameraConfig = config.CAMERA || {};
-                document.getElementById('camera-enabled').value = (cameraConfig.enabled && cameraConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
-                document.getElementById('camera-resolution').value = cameraConfig.video_resolution || '1024x768';
-                document.getElementById('camera-schedule').value = cameraConfig.schedule || '0 0-6 * * *';
-
-                const motionConfig = config.MOTION || {};
-                document.getElementById('motion-timeout').value = motionConfig.timeout || 300;
-
                 const networkConfig = config.NETWORK || {};
                 document.getElementById('ap-name').value = networkConfig.ap_name || 'dframe';
                 document.getElementById('ap-password').value = networkConfig.ap_password || 'DigitalFrame';
@@ -327,14 +296,6 @@
                 },
                 SCHEDULE: {
                     enabled: document.getElementById('schedule-enabled').value
-                },
-                CAMERA: {
-                    enabled: document.getElementById('camera-enabled').value,
-                    video_resolution: document.getElementById('camera-resolution').value,
-                    schedule: document.getElementById('camera-schedule').value
-                },
-                MOTION: {
-                    timeout: document.getElementById('motion-timeout').value
                 },
                 NETWORK: {
                     ap_name: document.getElementById('ap-name').value,
