@@ -780,6 +780,46 @@ def video_feed():
 
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+
+
+@app.route('/api/capture_video', methods=['POST'])
+def capture_video():
+    config = get_config()
+    if not config.getboolean('CAMERA', 'enabled', fallback=True):
+        return jsonify({"error": "Camera is disabled"}), 404
+
+    # Get current resolution from config to match live video
+    res = config.get('CAMERA', 'video_resolution', fallback='640x480').split('x')
+    width, height = res[0], res[1]
+
+    capture_dir = config.get('CAMERA', 'imagedir_captures', fallback='captures/')
+    if not os.path.isabs(capture_dir):
+        capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
+        
+    if not os.path.exists(capture_dir):
+        os.makedirs(capture_dir)
+    
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_file = os.path.join(capture_dir, f"video_{timestamp}.mp4")
+    
+    # Use the same command logic as video_feed
+    vid_cmd = 'rpicam-vid'
+    if shutil.which('rpicam-vid') is None and shutil.which('libcamera-vid'): vid_cmd = 'libcamera-vid'
+    
+    cmd = [vid_cmd, '-t', '60000', '--codec', 'libav', '--libav-format', 'mp4', '--width', width, '--height', height, '--hflip', '--vflip', '-o', output_file, '-n']
+    
+    def record():
+        logging.info(f"Starting video capture: {output_file}")
+        with camera_lock:
+            try:
+                subprocess.run(cmd, check=True, timeout=70)
+                logging.info(f"Video capture complete: {output_file}")
+            except Exception as e:
+                logging.error(f"Video capture failed: {e}")
+                
+    threading.Thread(target=record).start()
+    return jsonify({"status": "started", "file": output_file}), 200
+
 @app.route('/api/camera_feed')
 def camera_feed():
     config = get_config()

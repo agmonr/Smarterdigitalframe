@@ -27,8 +27,72 @@
             <option value="1920x1080">1920x1080 (Full HD)</option>
         </select>
         <button onclick="saveResolution()">Update Resolution</button>
+        <button id="capture-btn" onclick="captureVideo()" style="background: #e67e22; margin-left: 10px;">Capture 1m Video</button>
+        <div id="capture-status" style="margin-top: 10px; font-weight: bold; color: #e67e22;"></div>
     </div>
     <script>
+        async function captureVideo() {
+            const btn = document.getElementById('capture-btn');
+            const status = document.getElementById('capture-status');
+            const videoImg = document.getElementById('video-stream');
+            
+            if (!confirm('Start capturing a 1-minute video? This will temporarily stop the live stream.')) return;
+
+            btn.disabled = true;
+            status.innerText = 'Stopping live stream...';
+            
+            // 1. Stop the live stream to release the camera
+            const originalSrc = videoImg.src;
+            videoImg.src = ''; 
+            
+            // Give the backend a moment to close the camera handle
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            status.innerText = 'Initializing capture...';
+
+            try {
+                // 2. Trigger the backend capture
+                const response = await fetch('/api/capture_video', { method: 'POST' });
+                
+                let data;
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    data = await response.json();
+                } else {
+                    const text = await response.text();
+                    throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}`);
+                }
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `Server error: ${response.status}`);
+                }
+
+                let secondsLeft = 60;
+                const timer = setInterval(() => {
+                    secondsLeft--;
+                    if (secondsLeft <= 0) {
+                        clearInterval(timer);
+                        status.innerText = 'Capture complete! Restarting stream...';
+                        
+                        // 3. Restart the live stream
+                        setTimeout(() => {
+                            videoImg.src = originalSrc;
+                            status.innerText = '';
+                            btn.disabled = false;
+                        }, 2000);
+                    } else {
+                        status.innerText = `Recording... ${secondsLeft}s remaining`;
+                    }
+                }, 1000);
+
+                status.innerText = `Recording... ${secondsLeft}s remaining`;
+            } catch (err) {
+                alert('Error: ' + err.message);
+                videoImg.src = originalSrc; // Resume stream on error
+                btn.disabled = false;
+                status.innerText = '';
+            }
+        }
         async function saveResolution() {
             const res = document.getElementById('video-resolution').value;
             try {
