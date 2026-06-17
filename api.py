@@ -806,7 +806,7 @@ def capture_video():
     vid_cmd = 'rpicam-vid'
     if shutil.which('rpicam-vid') is None and shutil.which('libcamera-vid'): vid_cmd = 'libcamera-vid'
     
-    cmd = [vid_cmd, '-t', '60000', '--codec', 'libav', '--libav-format', 'mp4', '--width', width, '--height', height, '--hflip', '--vflip', '-o', output_file, '-n']
+    cmd = [vid_cmd, '-t', '60000', '--codec', 'libav', '--libav-format', 'mp4', '--width', width, '--height', height,'--bitrate', '5000000', '--hflip', '--vflip', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json',  '-o', output_file, '-n']
     
     def record():
         logging.info(f"Starting video capture: {output_file}")
