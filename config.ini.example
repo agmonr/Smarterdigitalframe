@@ -26,7 +26,7 @@ screenoffhour2 = 0
 screenonhour2 = 0
 groupsize = 20
 selected_folders = 
-weak_machine = False
+weak_machine = auto
 history_retention_days = 2
 
 [MOTION]
@@ -43,7 +43,10 @@ enabled = False
 [CAMERA]
 enabled = False
 video_resolution = 1024x768
-schedule = 0 0-6 * * *
+on_hour = 0
+off_hour = 0
+on_hour2 = 0
+off_hour2 = 0
 imagedir_captures = captures/
 capture_on_motion = True
 capture_mode = image

@@ -69,8 +69,20 @@
             <hr>
             <h4>Scheduled Capture</h4>
             <div class="form-group">
-                <label for="capture-schedule">Cron Schedule (e.g., 0 * * * *):</label>
-                <input type="text" id="capture-schedule" placeholder="0 * * * *">
+                <label>Camera ON Hour (0-23)</label>
+                <input type="number" id="camera-on-hour" min="0" max="23">
+            </div>
+            <div class="form-group">
+                <label>Camera OFF Hour (0-23)</label>
+                <input type="number" id="camera-off-hour" min="0" max="23">
+            </div>
+            <div class="form-group">
+                <label>Camera ON Hour 2 (0-23)</label>
+                <input type="number" id="camera-on-hour-2" min="0" max="23">
+            </div>
+            <div class="form-group">
+                <label>Camera OFF Hour 2 (0-23)</label>
+                <input type="number" id="camera-off-hour-2" min="0" max="23">
             </div>
             <div class="form-group">
                 <label for="capture-folder">Capture Folder:</label>
@@ -136,7 +148,10 @@
                     const configRes = await fetch('/api/config');
                     const config = await configRes.json();
                     const cameraConfig = config.CAMERA || {};
-                    document.getElementById('capture-schedule').value = cameraConfig.schedule || '';
+                    document.getElementById('camera-on-hour').value = cameraConfig.on_hour || 0;
+                    document.getElementById('camera-off-hour').value = cameraConfig.off_hour || 0;
+                    document.getElementById('camera-on-hour-2').value = cameraConfig.on_hour2 || 0;
+                    document.getElementById('camera-off-hour-2').value = cameraConfig.off_hour2 || 0;
                     document.getElementById('capture-folder').value = cameraConfig.imagedir_captures || 'captures/';
                     document.getElementById('capture-on-motion').checked = (cameraConfig.capture_on_motion && cameraConfig.capture_on_motion.toLowerCase() === 'true');
                     document.getElementById('capture-mode').value = cameraConfig.capture_mode || 'image';
@@ -163,7 +178,10 @@
             };
             const scheduleData = { 
                 CAMERA: { 
-                    schedule: document.getElementById('capture-schedule').value,
+                    on_hour: document.getElementById('camera-on-hour').value,
+                    off_hour: document.getElementById('camera-off-hour').value,
+                    on_hour2: document.getElementById('camera-on-hour-2').value,
+                    off_hour2: document.getElementById('camera-off-hour-2').value,
                     imagedir_captures: document.getElementById('capture-folder').value,
                     capture_on_motion: document.getElementById('capture-on-motion').checked ? 'True' : 'False',
                     capture_mode: document.getElementById('capture-mode').value,

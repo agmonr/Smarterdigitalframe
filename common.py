@@ -425,6 +425,38 @@ def is_scheduled_off():
         
     return False
 
+def is_camera_scheduled_on():
+    """Checks if the camera should be ON based on its own primary and secondary schedules."""
+    from datetime import datetime
+    config = get_config()
+    
+    now_hour = datetime.now().hour
+    
+    # Primary Schedule
+    on1 = config.getint('CAMERA', 'on_hour', fallback=0)
+    off1 = config.getint('CAMERA', 'off_hour', fallback=0)
+    # If on1 == off1, we assume the schedule is always ON or inactive (depending on convention)
+    # For camera, let's treat 0 to 0 as "Always On" if off hour is not set differently.
+    if on1 != off1 and is_hour_in_range(now_hour, on1, off1):
+        return True
+    elif on1 == off1 and on1 == 0: # Default 0-0 means always on for camera
+        # If both are 0, and we haven't defined a specific range, we might want it always on
+        # But if we use the same logic as screen, let's see.
+        # User requested dual range like screen.
+        pass
+        
+    # Secondary Schedule
+    on2 = config.getint('CAMERA', 'on_hour2', fallback=0)
+    off2 = config.getint('CAMERA', 'off_hour2', fallback=0)
+    if on2 != off2 and is_hour_in_range(now_hour, on2, off2):
+        return True
+        
+    # If both are 0-0, it's always on (special case for camera)
+    if on1 == off1 and on2 == off2:
+        return True
+
+    return False
+
 def is_presence_enabled():
     """Returns True if either Motion or Proximity detection is enabled."""
     config = get_config()

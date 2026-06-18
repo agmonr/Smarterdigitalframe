@@ -45,10 +45,18 @@ get_hardware_screen_state = common.get_hardware_screen_state
 presence_data = {
     "last_frame": None,
     "last_presence_time": time.time(),
+    "last_interaction_time": time.time(),
     "last_proximity_time": 0,
     "screen_state": "on",
     "ble_devices_in_range": 0
 }
+
+@app.before_request
+def mark_interaction():
+    # Only mark interaction for API calls, not static files if any
+    if request.path.startswith('/api'):
+        presence_data["last_interaction_time"] = time.time()
+
 camera_lock = threading.Lock()
 proximity_scanner = None
 
@@ -117,7 +125,18 @@ def presence_detection_thread():
     while True:
         try:
             config = get_config()
-            weak_machine = config.getboolean('DEFAULT', 'weak_machine', fallback=False)
+            weak_machine_val = config.get('DEFAULT', 'weak_machine', fallback='false').lower()
+            
+            # Determine effective weak_machine state
+            if weak_machine_val == 'auto':
+                # Disable weak mode (high performance) if:
+                # 1. User interacted in last 5 minutes
+                # 2. Motion was detected in last 60 seconds (active capture window)
+                user_active = (time.time() - presence_data["last_interaction_time"] < 300)
+                motion_active = (time.time() - presence_data["last_presence_time"] < 60)
+                effective_weak = not (user_active or motion_active)
+            else:
+                effective_weak = (weak_machine_val == 'true')
             
             motion_enabled = config.getboolean('MOTION', 'enabled', fallback=False)
             camera_enabled = config.getboolean('CAMERA', 'enabled', fallback=True)
@@ -128,7 +147,7 @@ def presence_detection_thread():
             presence_data["screen_state"] = current_hw_state
 
             if not (motion_enabled and camera_enabled) and not proximity_enabled:
-                time.sleep(30 if weak_machine else 5)
+                time.sleep(30 if effective_weak else 5)
                 continue
             
             # Update BLE device count if scanner is active
@@ -138,7 +157,7 @@ def presence_detection_thread():
             if motion_enabled and camera_enabled:
                 # Optimized motion check: Only if not manually OFF and not scheduled OFF
                 if os.path.exists(MANUAL_OFF_FILE) or common.is_scheduled_off():
-                    time.sleep(10 if weak_machine else 2)
+                    time.sleep(10 if effective_weak else 2)
                     continue
 
                 sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
@@ -231,15 +250,10 @@ def camera_scheduler_thread():
             if not config.getboolean('CAMERA', 'enabled', fallback=True):
                 time.sleep(60)
                 continue
-                
-            cron_expr = config.get('CAMERA', 'schedule', fallback='')
-            if not cron_expr or not croniter.is_valid(cron_expr):
-                time.sleep(60)
-                continue
             
-            now = datetime.now()
-            # Check if current time matches cron expression
-            if croniter.match(cron_expr, now):
+            # Use the new dual-range hour schedule
+            if common.is_camera_scheduled_on():
+                now = datetime.now()
                 # Ensure we only trigger once per minute
                 if now.minute != last_trigger_minute:
                     last_trigger_minute = now.minute
