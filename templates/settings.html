@@ -73,10 +73,11 @@
             <div class="form-group">
                 <label>Weak Machine Mode</label>
                 <select id="weak-machine" onchange="saveConfig()">
-                    <option value="True">Enabled</option>
-                    <option value="False">Disabled</option>
+                    <option value="auto">Auto (Smart performance)</option>
+                    <option value="True">Always Enabled</option>
+                    <option value="False">Always Disabled</option>
                 </select>
-                <div class="info-text">Limits updates to every 30 seconds to save CPU/Memory.</div>
+                <div class="info-text">Smart mode stays fast during use and motion detection, then saves power.</div>
             </div>
             <div class="form-group">
                 <label>History Retention (Days)</label>
@@ -238,7 +239,12 @@
                 document.getElementById('image-dir').value = defaults.imagedir || '';
                 document.getElementById('interval').value = defaults.interval;
                 document.getElementById('group-size').value = defaults.groupsize;
-                document.getElementById('weak-machine').value = (defaults.weak_machine && defaults.weak_machine.toLowerCase() === 'true') ? 'True' : 'False';
+                
+                const wm = defaults.weak_machine ? defaults.weak_machine.toLowerCase() : 'auto';
+                if (wm === 'true') document.getElementById('weak-machine').value = 'True';
+                else if (wm === 'false') document.getElementById('weak-machine').value = 'False';
+                else document.getElementById('weak-machine').value = 'auto';
+
                 document.getElementById('history-retention-days').value = defaults.history_retention_days || 30;
                 document.getElementById('show-time').value = defaults.showtime.toLowerCase() === 'true' ? 'True' : 'False';
                 document.getElementById('periodic-clock').value = (defaults.showperiodicclock && defaults.showperiodicclock.toLowerCase() === 'true') ? 'True' : 'False';

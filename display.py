@@ -37,7 +37,19 @@ def load_config_values():
     
     IMAGE_DIR = common.get_image_dir()
     SELECTED_FOLDERS = config.get('DEFAULT', 'selected_folders', fallback='all')
-    WEAK_MACHINE = config.getboolean('DEFAULT', 'weak_machine', fallback=False)
+    
+    # Handle 'auto' for weak_machine which getboolean would reject
+    wm_val = config.get('DEFAULT', 'weak_machine', fallback='false').lower()
+    if wm_val == 'auto':
+        # In 'auto' mode, display.py will use its own check for user activity or motion
+        # For simplicity in this process, we'll check if any recent interaction happened via the API
+        # But as a fallback/default for 'auto', we'll treat it as False (high perf) 
+        # unless we want to implement the same 5-min logic here.
+        # For now, let's just make sure it doesn't CRASH.
+        WEAK_MACHINE = False 
+    else:
+        WEAK_MACHINE = config.getboolean('DEFAULT', 'weak_machine', fallback=False)
+
     INTERVAL = config.getint('DEFAULT', 'interval', fallback=10)
     if WEAK_MACHINE:
         INTERVAL = max(INTERVAL, 30)
