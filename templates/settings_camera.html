@@ -112,6 +112,33 @@
                 <label>Capture Folder</label>
                 <input type="text" id="camera-capture-dir" placeholder="captures/" onchange="saveConfig()">
             </div>
+
+            <h3>Advanced Scheduled Options</h3>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="capture-on-motion" onchange="saveConfig()">
+                <label for="capture-on-motion">Only capture if motion is detected</label>
+            </div>
+            <div class="info-text">If enabled, the schedule will only trigger a capture if motion was detected in the last 60 seconds.</div>
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>Scheduled Capture Mode</label>
+                <select id="capture-mode" onchange="toggleCaptureMode(); saveConfig()">
+                    <option value="image">Burst of Images</option>
+                    <option value="video">Video Clip</option>
+                </select>
+            </div>
+
+            <div id="burst-options" class="form-group">
+                <label>Burst Count (Number of images)</label>
+                <input type="number" id="capture-burst-count" min="1" max="50" onchange="saveConfig()">
+                <div class="info-text">How many images to take in rapid succession.</div>
+            </div>
+
+            <div id="video-options" class="form-group" style="display: none;">
+                <label>Video Duration (seconds)</label>
+                <input type="number" id="capture-video-duration" min="1" max="300" onchange="saveConfig()">
+                <div class="info-text">Duration of the recorded video clip.</div>
+            </div>
             
             <p class="info-text" style="text-align: center; margin-top: 15px;">Note: Changes to hardware settings may trigger a service restart.</p>
         </div>
@@ -129,6 +156,12 @@
             setTimeout(() => { t.className = 'toast'; }, 2500);
         }
 
+        function toggleCaptureMode() {
+            const mode = document.getElementById('capture-mode').value;
+            document.getElementById('burst-options').style.display = (mode === 'image') ? 'block' : 'none';
+            document.getElementById('video-options').style.display = (mode === 'video') ? 'block' : 'none';
+        }
+
         async function loadConfig() {
             try {
                 // Load General Config
@@ -141,6 +174,13 @@
                 document.getElementById('camera-resolution').value = cameraConfig.video_resolution || '1024x768';
                 document.getElementById('camera-schedule').value = cameraConfig.schedule || '';
                 document.getElementById('camera-capture-dir').value = cameraConfig.imagedir_captures || 'captures/';
+                
+                document.getElementById('capture-on-motion').checked = (cameraConfig.capture_on_motion && cameraConfig.capture_on_motion.toLowerCase() === 'true');
+                document.getElementById('capture-mode').value = cameraConfig.capture_mode || 'image';
+                document.getElementById('capture-burst-count').value = cameraConfig.capture_burst_count || 20;
+                document.getElementById('capture-video-duration').value = cameraConfig.capture_video_duration || 10;
+                
+                toggleCaptureMode();
 
                 // Load Motion Config
                 const motionRes = await fetch(`${API_BASE}/motion`);
@@ -166,7 +206,11 @@
                     enabled: document.getElementById('camera-enabled').checked ? 'True' : 'False',
                     video_resolution: document.getElementById('camera-resolution').value,
                     schedule: document.getElementById('camera-schedule').value,
-                    imagedir_captures: document.getElementById('camera-capture-dir').value
+                    imagedir_captures: document.getElementById('camera-capture-dir').value,
+                    capture_on_motion: document.getElementById('capture-on-motion').checked ? 'True' : 'False',
+                    capture_mode: document.getElementById('capture-mode').value,
+                    capture_burst_count: document.getElementById('capture-burst-count').value,
+                    capture_video_duration: document.getElementById('capture-video-duration').value
                 }
             };
 

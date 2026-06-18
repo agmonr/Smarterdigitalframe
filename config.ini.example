@@ -45,6 +45,10 @@ enabled = False
 video_resolution = 1024x768
 schedule = 0 0-6 * * *
 imagedir_captures = captures/
+capture_on_motion = True
+capture_mode = image
+capture_burst_count = 20
+capture_video_duration = 10
 
 [NETWORK]
 ap_name = dframe

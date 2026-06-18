@@ -224,6 +224,7 @@ def presence_detection_thread():
 
 # Camera Scheduling Thread
 def camera_scheduler_thread():
+    last_trigger_minute = -1
     while True:
         try:
             config = get_config()
@@ -236,42 +237,106 @@ def camera_scheduler_thread():
                 time.sleep(60)
                 continue
             
-            # Check if it's time for a capture
-            iter = croniter(cron_expr, datetime.now())
-            next_run = iter.get_next(datetime)
+            now = datetime.now()
+            # Check if current time matches cron expression
+            if croniter.match(cron_expr, now):
+                # Ensure we only trigger once per minute
+                if now.minute != last_trigger_minute:
+                    last_trigger_minute = now.minute
+                    
+                    # Reload config to get freshest settings
+                    config = get_config()
+                    capture_on_motion = config.getboolean('CAMERA', 'capture_on_motion', fallback=False)
+                    
+                    should_capture = True
+                    if capture_on_motion:
+                        # Check if motion occurred in last 60 seconds
+                        time_since_motion = time.time() - presence_data["last_presence_time"]
+                        if time_since_motion > 60:
+                            should_capture = False
+                            logging.info(f"Scheduled capture skipped: No motion detected in last 60 seconds (last was {time_since_motion:.1f}s ago).")
+                        else:
+                            logging.info(f"Motion detected ({time_since_motion:.1f}s ago). Triggering scheduled capture.")
+                            
+                    if should_capture:
+                        capture_mode = config.get('CAMERA', 'capture_mode', fallback='image')
+                        if capture_mode == 'video':
+                            duration = config.getint('CAMERA', 'capture_video_duration', fallback=10)
+                            capture_video_segment(duration)
+                        else:
+                            burst_count = config.getint('CAMERA', 'capture_burst_count', fallback=20)
+                            capture_image(burst_count=burst_count)
             
-            # If the next run is within the next 60 seconds, wait for it
-            diff = (next_run - datetime.now()).total_seconds()
-            if diff < 60:
-                time.sleep(max(0, diff))
-                # Perform capture
-                capture_image()
-                time.sleep(60) # Prevent multiple triggers in same minute
-            else:
-                time.sleep(60)
+            # Check every 10 seconds for better responsiveness
+            time.sleep(10)
         except Exception as e:
+            logging.error(f"Error in camera_scheduler_thread: {e}")
             time.sleep(60)
 
-def capture_image():
+def capture_image(burst_count=1):
     with camera_lock:
         # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"capture_{timestamp}.jpg"
-        
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         config = get_config()
         image_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
         os.makedirs(image_dir, exist_ok=True)
-        filepath = os.path.join(image_dir, filename)
         
-        # Use rpicam-still to capture image to file
-        cmd = ['rpicam-still', '-n', '-o', filepath, '-t', '2000', '--width', '1296', '--height', '972', '--hflip', '--vflip', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json']
+        still_cmd = 'rpicam-still'
         if shutil.which('rpicam-still') is None and shutil.which('libcamera-still'):
-            cmd[0] = 'libcamera-still'
+            still_cmd = 'libcamera-still'
+            
+        if burst_count > 1:
+            # Use filename pattern for burst
+            filepath_pattern = os.path.join(image_dir, f"capture_{timestamp}_%02d.jpg")
+            # For maximum speed, use --timelapse 0 and small resolution
+            # This allows the hardware to stream frames to disk as fast as possible.
+            # Timeout needs to be long enough to finish all frames.
+            timeout_ms = max(5000, burst_count * 500) 
+            cmd = [still_cmd, '-n', '--immediate', '--frames', str(burst_count), '--timelapse', '0', '-o', filepath_pattern, '-t', str(timeout_ms), '--width', '640', '--height', '480', '--hflip', '--vflip', '--denoise', 'cdn_off', '--nopreview', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json']
+        else:
+            filename = f"capture_{timestamp}.jpg"
+            filepath = os.path.join(image_dir, filename)
+            cmd = [still_cmd, '-n', '-o', filepath, '-t', '2000', '--width', '1296', '--height', '972', '--hflip', '--vflip', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json']
             
         try:
             subprocess.run(cmd, check=True)
         except Exception as e:
-            pass
+            logging.error(f"Error capturing image(s): {e}")
+
+def capture_video_segment(duration_seconds=10):
+    config = get_config()
+    capture_dir = config.get('CAMERA', 'imagedir_captures', fallback='captures/')
+    if not os.path.isabs(capture_dir):
+        capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
+        
+    if not os.path.exists(capture_dir):
+        os.makedirs(capture_dir)
+    
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_file = os.path.join(capture_dir, f"video_{timestamp}.mp4")
+    
+    # Get current resolution from config
+    res = config.get('CAMERA', 'video_resolution', fallback='640x480').split('x')
+    width, height = res[0], res[1]
+    
+    vid_cmd = 'rpicam-vid'
+    if shutil.which('rpicam-vid') is None and shutil.which('libcamera-vid'):
+        vid_cmd = 'libcamera-vid'
+        
+    duration_ms = str(duration_seconds * 1000)
+    cmd = [vid_cmd, '-t', duration_ms, '--codec', 'libav', '--libav-format', 'mp4', '--width', width, '--height', height, '--bitrate', '5000000', '--hflip', '--vflip', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json', '-o', output_file, '-n']
+    
+    def record():
+        logging.info(f"Starting scheduled video capture: {output_file} for {duration_seconds}s")
+        with camera_lock:
+            try:
+                # Use a very generous timeout (double the duration) to ensure file is finalized
+                subprocess.run(cmd, check=True, timeout=(duration_seconds * 2) + 10)
+                logging.info(f"Scheduled video capture complete: {output_file}")
+            except Exception as e:
+                logging.error(f"Scheduled video capture failed: {e}")
+
+    threading.Thread(target=record).start()
 
 # Google Photos Sync Thread
 def google_photos_sync_thread():

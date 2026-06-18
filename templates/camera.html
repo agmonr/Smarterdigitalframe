@@ -76,7 +76,24 @@
                 <label for="capture-folder">Capture Folder:</label>
                 <input type="text" id="capture-folder" placeholder="captures/">
             </div>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="capture-on-motion">
+                <label for="capture-on-motion">Only capture if motion is detected</label>
+            </div>
             <div class="form-group">
+                <label>Capture Mode</label>
+                <select id="capture-mode" onchange="toggleCaptureMode()">
+                    <option value="image">Burst of Images</option>
+                    <option value="video">Video Clip</option>
+                </select>
+            </div>
+            <div id="burst-options" class="form-group">
+                <label>Burst Count</label>
+                <input type="number" id="capture-burst-count" min="1" max="50">
+            </div>
+            <div id="video-options" class="form-group" style="display: none;">
+                <label>Video Duration (s)</label>
+                <input type="number" id="capture-video-duration" min="1" max="300">
             </div>
             <button onclick="saveSettings()" style="background: #2ecc71;">Save Settings</button>
             <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
@@ -99,6 +116,11 @@
                 console.error("Failed to check camera settings", err);
             }
         }
+        function toggleCaptureMode() {
+            const mode = document.getElementById('capture-mode').value;
+            document.getElementById('burst-options').style.display = (mode === 'image') ? 'block' : 'none';
+            document.getElementById('video-options').style.display = (mode === 'video') ? 'block' : 'none';
+        }
         async function loadSettings(isInitialLoad = false) {
             try {
                 const response = await fetch('/api/motion');
@@ -113,8 +135,14 @@
                     document.getElementById('gain').value = data.gain || 0;
                     const configRes = await fetch('/api/config');
                     const config = await configRes.json();
-                    document.getElementById('capture-schedule').value = (config.CAMERA && config.CAMERA.schedule) || '';
-                    document.getElementById('capture-folder').value = (config.CAMERA && config.CAMERA.imagedir_captures) || 'captures/';
+                    const cameraConfig = config.CAMERA || {};
+                    document.getElementById('capture-schedule').value = cameraConfig.schedule || '';
+                    document.getElementById('capture-folder').value = cameraConfig.imagedir_captures || 'captures/';
+                    document.getElementById('capture-on-motion').checked = (cameraConfig.capture_on_motion && cameraConfig.capture_on_motion.toLowerCase() === 'true');
+                    document.getElementById('capture-mode').value = cameraConfig.capture_mode || 'image';
+                    document.getElementById('capture-burst-count').value = cameraConfig.capture_burst_count || 20;
+                    document.getElementById('capture-video-duration').value = cameraConfig.capture_video_duration || 10;
+                    toggleCaptureMode();
                 }
                 document.getElementById('current-sensitivity').innerText = data.effective_sensitivity;
                 const statusBadge = document.getElementById('screen-status');
@@ -137,6 +165,10 @@
                 CAMERA: { 
                     schedule: document.getElementById('capture-schedule').value,
                     imagedir_captures: document.getElementById('capture-folder').value,
+                    capture_on_motion: document.getElementById('capture-on-motion').checked ? 'True' : 'False',
+                    capture_mode: document.getElementById('capture-mode').value,
+                    capture_burst_count: document.getElementById('capture-burst-count').value,
+                    capture_video_duration: document.getElementById('capture-video-duration').value
                 } 
             };
             try {
