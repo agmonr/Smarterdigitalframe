@@ -392,14 +392,18 @@ def get_images(image_dir=None):
     _image_cache_time = now
     return images
 
-def is_hour_in_range(hour, start, end):
-    if start == end: return False
-    # Standard range (e.g., 22 to 07)
-    if start < end:
-        return start <= hour < end
+def is_time_in_range(now_h, now_m, start_h, start_m, end_h, end_m):
+    now_total = now_h * 60 + now_m
+    start_total = start_h * 60 + start_m
+    end_total = end_h * 60 + end_m
+    
+    if start_total == end_total: return False
+    
+    if start_total < end_total:
+        return start_total <= now_total < end_total
     else:
-        # Wrapped range (e.g., 22 to 07 where start > end)
-        return hour >= start or hour < end
+        # Wrapped range (e.g., 22:30 to 07:15)
+        return now_total >= start_total or now_total < end_total
 
 def is_scheduled_off():
     """Checks if the screen should be OFF based on the primary and secondary schedules."""
@@ -409,18 +413,24 @@ def is_scheduled_off():
     if not schedule_enabled:
         return False
         
-    now_hour = datetime.now().hour
+    now = datetime.now()
+    now_h, now_m = now.hour, now.minute
     
     # Primary Schedule
-    off1 = config.getint('DEFAULT', 'screenoffhour', fallback=22)
-    on1 = config.getint('DEFAULT', 'screenonhour', fallback=7)
-    if is_hour_in_range(now_hour, off1, on1):
+    off_h1 = config.getint('DEFAULT', 'screenoffhour', fallback=22)
+    off_m1 = config.getint('DEFAULT', 'screenoffmin', fallback=0)
+    on_h1 = config.getint('DEFAULT', 'screenonhour', fallback=7)
+    on_m1 = config.getint('DEFAULT', 'screenonmin', fallback=0)
+    if is_time_in_range(now_h, now_m, off_h1, off_m1, on_h1, on_m1):
         return True
         
     # Secondary Schedule
-    off2 = config.getint('DEFAULT', 'screenoffhour2', fallback=0)
-    on2 = config.getint('DEFAULT', 'screenonhour2', fallback=0)
-    if off2 != on2 and is_hour_in_range(now_hour, off2, on2):
+    off_h2 = config.getint('DEFAULT', 'screenoffhour2', fallback=0)
+    off_m2 = config.getint('DEFAULT', 'screenoffmin2', fallback=0)
+    on_h2 = config.getint('DEFAULT', 'screenonhour2', fallback=0)
+    on_m2 = config.getint('DEFAULT', 'screenonmin2', fallback=0)
+    
+    if (off_h2 != on_h2 or off_m2 != on_m2) and is_time_in_range(now_h, now_m, off_h2, off_m2, on_h2, on_m2):
         return True
         
     return False
@@ -430,29 +440,29 @@ def is_camera_scheduled_on():
     from datetime import datetime
     config = get_config()
     
-    now_hour = datetime.now().hour
+    now = datetime.now()
+    now_h, now_m = now.hour, now.minute
     
     # Primary Schedule
-    on1 = config.getint('CAMERA', 'on_hour', fallback=0)
-    off1 = config.getint('CAMERA', 'off_hour', fallback=0)
-    # If on1 == off1, we assume the schedule is always ON or inactive (depending on convention)
-    # For camera, let's treat 0 to 0 as "Always On" if off hour is not set differently.
-    if on1 != off1 and is_hour_in_range(now_hour, on1, off1):
+    on_h1 = config.getint('CAMERA', 'on_hour', fallback=0)
+    on_m1 = config.getint('CAMERA', 'on_min', fallback=0)
+    off_h1 = config.getint('CAMERA', 'off_hour', fallback=0)
+    off_m1 = config.getint('CAMERA', 'off_min', fallback=0)
+    
+    if (on_h1 != off_h1 or on_m1 != off_m1) and is_time_in_range(now_h, now_m, on_h1, on_m1, off_h1, off_m1):
         return True
-    elif on1 == off1 and on1 == 0: # Default 0-0 means always on for camera
-        # If both are 0, and we haven't defined a specific range, we might want it always on
-        # But if we use the same logic as screen, let's see.
-        # User requested dual range like screen.
-        pass
         
     # Secondary Schedule
-    on2 = config.getint('CAMERA', 'on_hour2', fallback=0)
-    off2 = config.getint('CAMERA', 'off_hour2', fallback=0)
-    if on2 != off2 and is_hour_in_range(now_hour, on2, off2):
+    on_h2 = config.getint('CAMERA', 'on_hour2', fallback=0)
+    on_m2 = config.getint('CAMERA', 'on_min2', fallback=0)
+    off_h2 = config.getint('CAMERA', 'off_hour2', fallback=0)
+    off_m2 = config.getint('CAMERA', 'off_min2', fallback=0)
+    
+    if (on_h2 != off_h2 or on_m2 != off_m2) and is_time_in_range(now_h, now_m, on_h2, on_m2, off_h2, off_m2):
         return True
         
     # If both are 0-0, it's always on (special case for camera)
-    if on1 == off1 and on2 == off2:
+    if on_h1 == off_h1 and on_m1 == off_m1 and on_h2 == off_h2 and on_m2 == off_m2:
         return True
 
     return False

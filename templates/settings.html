@@ -162,21 +162,45 @@
                     <option value="False">Disabled</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label>Screen OFF Hour (0-23)</label>
-                <input type="number" id="screen-off-hour" min="0" max="23" onchange="saveConfig()">
+            <div class="form-group" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Screen OFF Hour (0-23)</label>
+                    <input type="number" id="screen-off-hour" min="0" max="23" onchange="saveConfig()">
+                </div>
+                <div style="flex: 1;">
+                    <label>Min (0-59)</label>
+                    <input type="number" id="screen-off-min" min="0" max="59" onchange="saveConfig()">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Screen ON Hour (0-23)</label>
-                <input type="number" id="screen-on-hour" min="0" max="23" onchange="saveConfig()">
+            <div class="form-group" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Screen ON Hour (0-23)</label>
+                    <input type="number" id="screen-on-hour" min="0" max="23" onchange="saveConfig()">
+                </div>
+                <div style="flex: 1;">
+                    <label>Min (0-59)</label>
+                    <input type="number" id="screen-on-min" min="0" max="59" onchange="saveConfig()">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Screen OFF Hour 2 (0-23)</label>
-                <input type="number" id="screen-off-hour-2" min="0" max="23" onchange="saveConfig()">
+            <div class="form-group" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Screen OFF Hour 2 (0-23)</label>
+                    <input type="number" id="screen-off-hour-2" min="0" max="23" onchange="saveConfig()">
+                </div>
+                <div style="flex: 1;">
+                    <label>Min (0-59)</label>
+                    <input type="number" id="screen-off-min-2" min="0" max="59" onchange="saveConfig()">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Screen ON Hour 2 (0-23)</label>
-                <input type="number" id="screen-on-hour-2" min="0" max="23" onchange="saveConfig()">
+            <div class="form-group" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Screen ON Hour 2 (0-23)</label>
+                    <input type="number" id="screen-on-hour-2" min="0" max="23" onchange="saveConfig()">
+                </div>
+                <div style="flex: 1;">
+                    <label>Min (0-59)</label>
+                    <input type="number" id="screen-on-min-2" min="0" max="59" onchange="saveConfig()">
+                </div>
             </div>
 
             <h2>Network Settings (Access Point)</h2>
@@ -260,9 +284,13 @@
                 document.getElementById('time-border-color').value = colorNameToHex(defaults.timebordercolor);
                 document.getElementById('time-border-size').value = defaults.timebordersize || 2;
                 document.getElementById('screen-off-hour').value = defaults.screenoffhour || 22;
+                document.getElementById('screen-off-min').value = defaults.screenoffmin || 0;
                 document.getElementById('screen-on-hour').value = defaults.screenonhour || 7;
+                document.getElementById('screen-on-min').value = defaults.screenonmin || 0;
                 document.getElementById('screen-off-hour-2').value = defaults.screenoffhour2 || 0;
+                document.getElementById('screen-off-min-2').value = defaults.screenoffmin2 || 0;
                 document.getElementById('screen-on-hour-2').value = defaults.screenonhour2 || 0;
+                document.getElementById('screen-on-min-2').value = defaults.screenonmin2 || 0;
                 
                 const schedConfig = config.SCHEDULE || {};
                 document.getElementById('schedule-enabled').value = (schedConfig.enabled && schedConfig.enabled.toLowerCase() === 'true') ? 'True' : 'False';
@@ -296,9 +324,13 @@
                     timebordercolor: document.getElementById('time-border-color').value,
                     timebordersize: document.getElementById('time-border-size').value,
                     screenoffhour: document.getElementById('screen-off-hour').value,
+                    screenoffmin: document.getElementById('screen-off-min').value,
                     screenonhour: document.getElementById('screen-on-hour').value,
+                    screenonmin: document.getElementById('screen-on-min').value,
                     screenoffhour2: document.getElementById('screen-off-hour-2').value,
-                    screenonhour2: document.getElementById('screen-on-hour-2').value
+                    screenoffmin2: document.getElementById('screen-off-min-2').value,
+                    screenonhour2: document.getElementById('screen-on-hour-2').value,
+                    screenonmin2: document.getElementById('screen-on-min-2').value
                 },
                 SCHEDULE: {
                     enabled: document.getElementById('schedule-enabled').value

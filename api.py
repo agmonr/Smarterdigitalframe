@@ -85,6 +85,39 @@ def _enable_pairing_mode_task(duration=60):
         logging.error(f"Error in Bluetooth pairing mode task: {e}")
         _pairing_mode_active = False
 
+@app.route('/api/captures', methods=['GET'])
+def list_captures():
+    config = get_config()
+    capture_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
+    if not os.path.isabs(capture_dir):
+        capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
+    
+    if not os.path.exists(capture_dir):
+        return jsonify([])
+
+    files = []
+    for f in os.listdir(capture_dir):
+        if f.lower().endswith(('.jpg', '.mp4')):
+            full_path = os.path.join(capture_dir, f)
+            files.append({
+                "name": f,
+                "url": f"/api/captures/{f}",
+                "type": "video" if f.lower().endswith('.mp4') else "image",
+                "mtime": os.path.getmtime(full_path)
+            })
+    
+    # Sort by mtime (newest first)
+    files.sort(key=lambda x: x["mtime"], reverse=True)
+    return jsonify(files)
+
+@app.route('/api/captures/<path:filename>')
+def serve_capture(filename):
+    config = get_config()
+    capture_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
+    if not os.path.isabs(capture_dir):
+        capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
+    return send_from_directory(capture_dir, filename)
+
 @app.route('/api/proximity/pairing-mode', methods=['POST'])
 def enable_pairing_mode_api():
     duration = request.json.get('duration', 60)

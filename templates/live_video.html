@@ -4,33 +4,126 @@
     <meta charset="UTF-8">
     <title>Live Video - Digital Frame</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
+        body { font-family: sans-serif; padding: 20px; text-align: center; background: #f4f7f6; color: #333; }
         .nav { margin-bottom: 20px; }
         .nav a { margin: 0 10px; color: #3498db; text-decoration: none; font-weight: bold; }
-        img { width: 100%; max-width: 800px; border-radius: 8px; background: #000; }
-        .settings { margin-top: 20px; }
-        select { padding: 8px; font-size: 16px; }
-        button { padding: 8px 16px; background: #3498db; color: white; border: none; cursor: pointer; font-size: 16px; }
+        .stream-container { background: #000; border-radius: 12px; display: inline-block; padding: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 20px; width: 95%; max-width: 800px; }
+        img.stream { width: 100%; border-radius: 8px; }
+        .settings { margin-top: 10px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: inline-block; width: 95%; max-width: 800px; box-sizing: border-box; }
+        select { padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #ddd; }
+        button { padding: 10px 20px; background: #3498db; color: white; border: none; cursor: pointer; font-size: 16px; border-radius: 4px; font-weight: bold; transition: background 0.3s; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+        .gallery-section { margin-top: 40px; text-align: left; max-width: 1000px; margin-left: auto; margin-right: auto; }
+        .gallery-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        .gallery-item { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; position: relative; }
+        .gallery-item:hover { transform: translateY(-3px); }
+        .gallery-item img, .gallery-item video { width: 100%; height: 150px; object-fit: cover; background: #eee; cursor: pointer; }
+        .gallery-item .info { padding: 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .gallery-item .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+        .gallery-item .download-btn { background: #2ecc71; padding: 4px 8px; border-radius: 4px; color: white; text-decoration: none; font-size: 11px; }
+        .gallery-item .download-btn:hover { background: #27ae60; }
+        
+        .video-icon { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; pointer-events: none; }
+        
+        /* Modal for full view */
+        .modal { display: none; position: fixed; z-index: 1000; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
+        .modal-content { max-width: 90%; max-height: 90%; border-radius: 8px; }
+        .close-modal { position: absolute; top: 20px; right: 30px; color: white; font-size: 40px; cursor: pointer; }
     </style>
 </head>
 <body>
 {% include "nav.html" %}
-    <h1>Live Video</h1>
-    <img id="video-stream" src="/api/video_feed" alt="Live Video Feed">
-    <div class="settings">
-        <label for="video-resolution">Resolution:</label>
-        <select id="video-resolution">
-            <option value="320x240">320x240</option>
-            <option value="640x480">640x480</option>
-            <option value="1024x768">1024x768</option>
-            <option value="1280x720">1280x720 (HD)</option>
-            <option value="1920x1080">1920x1080 (Full HD)</option>
-        </select>
-        <button onclick="saveResolution()">Update Resolution</button>
-        <button id="capture-btn" onclick="captureVideo()" style="background: #e67e22; margin-left: 10px;">Capture 1m Video</button>
-        <div id="capture-status" style="margin-top: 10px; font-weight: bold; color: #e67e22;"></div>
+    <h1>Live Video Feed</h1>
+    
+    <div class="stream-container">
+        <img id="video-stream" class="stream" src="/api/video_feed" alt="Live Video Feed">
     </div>
+
+    <div class="settings">
+        <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; align-items: center;">
+            <div class="form-group">
+                <label for="video-resolution" style="font-weight: bold; margin-right: 5px;">Stream Resolution:</label>
+                <select id="video-resolution">
+                    <option value="320x240">320x240</option>
+                    <option value="640x480">640x480</option>
+                    <option value="1024x768">1024x768</option>
+                    <option value="1280x720">1280x720 (HD)</option>
+                    <option value="1920x1080">1920x1080 (Full HD)</option>
+                </select>
+                <button onclick="saveResolution()" style="margin-left: 5px;">Update</button>
+            </div>
+            
+            <button id="capture-btn" onclick="captureVideo()" style="background: #e67e22;">Capture 1m Video</button>
+        </div>
+        <div id="capture-status" style="margin-top: 15px; font-weight: bold; color: #e67e22; height: 20px;"></div>
+    </div>
+
+    <div class="gallery-section">
+        <div class="gallery-header">
+            <h2 style="margin: 0;">Recent Captures</h2>
+            <button onclick="loadCaptures()" style="background: #95a5a6; padding: 6px 12px; font-size: 14px;">Refresh Gallery</button>
+        </div>
+        <div id="gallery-grid" class="gallery-grid">
+            <!-- Captures will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Modal for viewing -->
+    <div id="modal" class="modal" onclick="this.style.display='none'">
+        <span class="close-modal">&times;</span>
+        <div id="modal-container" onclick="event.stopPropagation()">
+            <!-- Content dynamically added -->
+        </div>
+    </div>
+
     <script>
+        async function loadCaptures() {
+            const grid = document.getElementById('gallery-grid');
+            try {
+                const response = await fetch('/api/captures');
+                const captures = await response.json();
+                
+                if (captures.length === 0) {
+                    grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #7f8c8d; padding: 40px;">No captures found in the capture folder.</p>';
+                    return;
+                }
+
+                grid.innerHTML = captures.map(c => `
+                    <div class="gallery-item">
+                        ${c.type === 'video' ? `
+                            <div class="video-icon">▶</div>
+                            <video src="${c.url}" muted onmouseover="this.play()" onmouseout="this.pause(); this.currentTime=0;" onclick="openModal('${c.url}', 'video')"></video>
+                        ` : `
+                            <img src="${c.url}" onclick="openModal('${c.url}', 'image')">
+                        `}
+                        <div class="info">
+                            <span class="name" title="${c.name}">${c.name}</span>
+                            <a href="${c.url}" download class="download-btn">Save</a>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error("Failed to load captures", err);
+                grid.innerHTML = '<p style="color: red;">Error loading gallery.</p>';
+            }
+        }
+
+        function openModal(url, type) {
+            const modal = document.getElementById('modal');
+            const container = document.getElementById('modal-container');
+            
+            if (type === 'video') {
+                container.innerHTML = `<video src="${url}" controls autoplay style="max-width: 100%; max-height: 90vh;"></video>`;
+            } else {
+                container.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 90vh;">`;
+            }
+            
+            modal.style.display = 'flex';
+        }
+
         async function captureVideo() {
             const btn = document.getElementById('capture-btn');
             const status = document.getElementById('capture-status');
@@ -79,6 +172,7 @@
                             videoImg.src = originalSrc;
                             status.innerText = '';
                             btn.disabled = false;
+                            loadCaptures(); // Refresh gallery after capture
                         }, 2000);
                     } else {
                         status.innerText = `Recording... ${secondsLeft}s remaining`;
@@ -124,6 +218,7 @@
             } catch (err) {}
         }
         loadConfig();
+        loadCaptures();
     </script>
 </body>
 </html>
