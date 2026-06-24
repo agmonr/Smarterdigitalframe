@@ -47,7 +47,7 @@ matplotlib==3.10.9
 mdurl==0.1.2
 numpy==2.4.4
 oauthlib==3.2.2
-opencv-python==4.13.0.92
+opencv-python-headless==4.13.0.92
 packaging==25.0
 pandas-stubs==3.0.3.260530
 pexpect==4.9.0
