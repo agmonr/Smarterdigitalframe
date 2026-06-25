@@ -277,35 +277,105 @@ def presence_detection_thread():
 # Camera Scheduling Thread
 def camera_scheduler_thread():
     last_trigger_minute = -1
+    _cam_last_frame = None  # Independent frame state for motion-triggered capture
+    _cam_cooldown_until = 0  # Cooldown after a capture to avoid rapid re-triggers
     while True:
         try:
             config = get_config()
             if not config.getboolean('CAMERA', 'enabled', fallback=True):
+                _cam_last_frame = None
                 time.sleep(60)
                 continue
             
             # Use the new dual-range hour schedule
             if common.is_camera_scheduled_on():
                 now = datetime.now()
-                # Ensure we only trigger once per minute
-                if now.minute != last_trigger_minute:
-                    last_trigger_minute = now.minute
+                
+                # Reload config to get freshest settings
+                config = get_config()
+                capture_on_motion = config.getboolean('CAMERA', 'capture_on_motion', fallback=False)
+                
+                if capture_on_motion:
+                    # --- Independent motion detection for capture ---
+                    # Skip if in cooldown after a recent capture
+                    if time.time() < _cam_cooldown_until:
+                        time.sleep(2)
+                        continue
                     
-                    # Reload config to get freshest settings
-                    config = get_config()
-                    capture_on_motion = config.getboolean('CAMERA', 'capture_on_motion', fallback=False)
+                    # Get sensitivity settings (with auto-sensitivity support)
+                    sensitivity = config.getint('MOTION', 'sensitivity', fallback=50)
+                    auto_sens = config.getboolean('MOTION', 'auto_sensitivity', fallback=False)
                     
-                    should_capture = True
-                    if capture_on_motion:
-                        # Check if motion occurred in last 60 seconds
-                        time_since_motion = time.time() - presence_data["last_presence_time"]
-                        if time_since_motion > 60:
-                            should_capture = False
-                            logging.info(f"Scheduled capture skipped: No motion detected in last 60 seconds (last was {time_since_motion:.1f}s ago).")
-                        else:
-                            logging.info(f"Motion detected ({time_since_motion:.1f}s ago). Triggering scheduled capture.")
+                    effective_sensitivity = sensitivity
+                    if auto_sens and _cam_last_frame is not None:
+                        light = get_avg_light(_cam_last_frame)
+                        if light < 50:
+                            effective_sensitivity = min(100, sensitivity + 30)
+                        elif light > 200:
+                            effective_sensitivity = max(1, sensitivity - 20)
+                    
+                    threshold = max(1, 100 - effective_sensitivity)
+                    
+                    # Capture a low-res frame for motion comparison
+                    shutter = config.getint('MOTION', 'shutter', fallback=0)
+                    gain = config.getint('MOTION', 'gain', fallback=0)
+                    
+                    cmd = ['rpicam-still', '-n', '-o', '-', '-t', '200', '--width', '320', '--height', '240', '--hflip', '--vflip', '--tuning-file', '/usr/share/libcamera/ipa/rpi/vc4/ov5647_noir.json']
+                    if shutter > 0:
+                        cmd.extend(['--shutter', str(shutter)])
+                    if gain > 0:
+                        cmd.extend(['--gain', str(gain)])
+                    
+                    if shutil.which('rpicam-still') is None and shutil.which('libcamera-still'):
+                        cmd[0] = 'libcamera-still'
+                    
+                    with camera_lock:
+                        result = subprocess.run(cmd, capture_output=True)
+                    
+                    motion_detected = False
+                    if result.returncode == 0:
+                        nparr = np.frombuffer(result.stdout, np.uint8)
+                        frame = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+                        if frame is not None:
+                            frame = cv2.GaussianBlur(frame, (21, 21), 0)
                             
-                    if should_capture:
+                            if _cam_last_frame is not None:
+                                frame_delta = cv2.absdiff(_cam_last_frame, frame)
+                                thresh_img = cv2.threshold(frame_delta, threshold, 255, cv2.THRESH_BINARY)[1]
+                                thresh_img = cv2.dilate(thresh_img, None, iterations=2)
+                                
+                                changed_pixels = np.sum(thresh_img) / 255
+                                change_percent = (changed_pixels / (frame.shape[0] * frame.shape[1])) * 100
+                                
+                                if change_percent > 0.5:
+                                    motion_detected = True
+                                    # Also update presence_data so the screen can wake up
+                                    presence_data["last_presence_time"] = time.time()
+                            
+                            _cam_last_frame = frame
+                    
+                    if motion_detected:
+                        logging.info(f"Camera scheduler: Motion detected! Triggering capture.")
+                        capture_mode = config.get('CAMERA', 'capture_mode', fallback='image')
+                        if capture_mode == 'video':
+                            duration = config.getint('CAMERA', 'capture_video_duration', fallback=10)
+                            capture_video_segment(duration)
+                            # Cooldown: wait at least the video duration + 5s before re-checking
+                            _cam_cooldown_until = time.time() + duration + 5
+                        else:
+                            burst_count = config.getint('CAMERA', 'capture_burst_count', fallback=20)
+                            capture_image(burst_count=burst_count)
+                            # Cooldown: 30 seconds after a burst capture
+                            _cam_cooldown_until = time.time() + 30
+                        _cam_last_frame = None  # Reset so next comparison starts fresh
+                    
+                    # Poll frequently for motion responsiveness
+                    time.sleep(2)
+                else:
+                    # --- Original behavior: capture every minute during scheduled hours ---
+                    if now.minute != last_trigger_minute:
+                        last_trigger_minute = now.minute
+                        
                         capture_mode = config.get('CAMERA', 'capture_mode', fallback='image')
                         if capture_mode == 'video':
                             duration = config.getint('CAMERA', 'capture_video_duration', fallback=10)
@@ -313,9 +383,11 @@ def camera_scheduler_thread():
                         else:
                             burst_count = config.getint('CAMERA', 'capture_burst_count', fallback=20)
                             capture_image(burst_count=burst_count)
-            
-            # Check every 10 seconds for better responsiveness
-            time.sleep(10)
+                    
+                    time.sleep(10)
+            else:
+                _cam_last_frame = None  # Reset when outside schedule
+                time.sleep(10)
         except Exception as e:
             logging.error(f"Error in camera_scheduler_thread: {e}")
             time.sleep(60)
