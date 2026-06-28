@@ -93,22 +93,33 @@ def list_captures():
         capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
     
     if not os.path.exists(capture_dir):
-        return jsonify([])
+        return jsonify({"files": [], "folders": {}})
 
     files = []
-    for f in os.listdir(capture_dir):
-        if f.lower().endswith(('.jpg', '.mp4')):
-            full_path = os.path.join(capture_dir, f)
+    folders = {}
+    for root, dirs, filenames in os.walk(capture_dir):
+        rel_root = os.path.relpath(root, capture_dir)
+        if rel_root == '.':
+            rel_root = ''
+        
+        valid_files = [f for f in filenames if f.lower().endswith(('.jpg', '.mp4'))]
+        if rel_root != '':
+            folders[rel_root.replace('\\', '/')] = len(valid_files)
+            
+        for f in valid_files:
+            full_path = os.path.join(root, f)
+            rel_path = os.path.join(rel_root, f) if rel_root else f
+            rel_path = rel_path.replace('\\', '/')
             files.append({
                 "name": f,
-                "url": f"/api/captures/{f}",
+                "folder": rel_root.replace('\\', '/'),
+                "url": f"/api/captures/{rel_path}",
                 "type": "video" if f.lower().endswith('.mp4') else "image",
                 "mtime": os.path.getmtime(full_path)
             })
     
-    # Sort by mtime (newest first)
     files.sort(key=lambda x: x["mtime"], reverse=True)
-    return jsonify(files)
+    return jsonify({"files": files, "folders": folders})
 
 @app.route('/api/captures/<path:filename>')
 def serve_capture(filename):
@@ -407,29 +418,61 @@ def cleanup_old_captures(directory):
     try:
         config = get_config()
         retention_days = config.getint('CAMERA', 'capture_retention_days', fallback=7)
-        if retention_days <= 0:
-            return
-        cutoff = time.time() - (retention_days * 86400)
-        for f in os.listdir(directory):
-            if f.lower().endswith(('.jpg', '.mp4')):
-                full_path = os.path.join(directory, f)
-                if os.path.getmtime(full_path) < cutoff:
-                    os.remove(full_path)
-                    logging.info(f"Deleted old capture based on retention policy: {full_path}")
+        retention_size_mb = config.getint('CAMERA', 'capture_retention_size_mb', fallback=0)
+        
+        # 1. Cleanup by days
+        if retention_days > 0:
+            cutoff = time.time() - (retention_days * 86400)
+            for f in os.listdir(directory):
+                if f.lower().endswith(('.jpg', '.mp4')):
+                    full_path = os.path.join(directory, f)
+                    if os.path.getmtime(full_path) < cutoff:
+                        os.remove(full_path)
+                        logging.info(f"Deleted old capture by age: {full_path}")
+                        
+        # 2. Cleanup by size
+        if retention_size_mb > 0:
+            max_bytes = retention_size_mb * 1024 * 1024
+            files = []
+            total_size = 0
+            for f in os.listdir(directory):
+                if f.lower().endswith(('.jpg', '.mp4')):
+                    full_path = os.path.join(directory, f)
+                    try:
+                        stat = os.stat(full_path)
+                        files.append({'path': full_path, 'mtime': stat.st_mtime, 'size': stat.st_size})
+                        total_size += stat.st_size
+                    except OSError:
+                        pass
+                        
+            if total_size > max_bytes:
+                files.sort(key=lambda x: x['mtime'])
+                for f in files:
+                    if total_size <= max_bytes:
+                        break
+                    try:
+                        os.remove(f['path'])
+                        total_size -= f['size']
+                        logging.info(f"Deleted old capture by size limit: {f['path']}")
+                    except Exception as e:
+                        logging.error(f"Error deleting file for size limit: {e}")
+                        
     except Exception as e:
         logging.error(f"Error in cleanup_old_captures: {e}")
 
 def capture_image(burst_count=1):
-
     with camera_lock:
-        # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        date_folder = datetime.now().strftime("%Y-%m-%d")
         config = get_config()
-        image_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
+        capture_base = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
+        if not os.path.isabs(capture_base):
+             capture_base = os.path.join(PROJECT_ROOT, capture_base)
+        image_dir = os.path.join(capture_base, date_folder)
         os.makedirs(image_dir, exist_ok=True)
         
-        cleanup_old_captures(image_dir)
-        if not check_free_space(image_dir, 1.0):
+        cleanup_old_captures(capture_base)
+        if not check_free_space(capture_base, 1.0):
             logging.error("Not enough free space (needs 1GB). Skipping image capture.")
             return
         
@@ -457,19 +500,16 @@ def capture_image(burst_count=1):
 
 def capture_video_segment(duration_seconds=10):
     config = get_config()
-    capture_dir = config.get('CAMERA', 'imagedir_captures', fallback='captures/')
-    if not os.path.isabs(capture_dir):
-        capture_dir = os.path.join(PROJECT_ROOT, capture_dir)
+    capture_base = config.get('CAMERA', 'imagedir_captures', fallback='captures/')
+    if not os.path.isabs(capture_base):
+        capture_base = os.path.join(PROJECT_ROOT, capture_base)
         
-    if not os.path.exists(capture_dir):
-        os.makedirs(capture_dir)
+    date_folder = datetime.now().strftime("%Y-%m-%d")
+    capture_dir = os.path.join(capture_base, date_folder)
+    os.makedirs(capture_dir, exist_ok=True)
         
-    cleanup_old_captures(capture_dir)
-    if not check_free_space(capture_dir, 1.0):
-        return jsonify({"error": "Not enough free space (needs 1GB) on target partition"}), 507
-        
-    cleanup_old_captures(capture_dir)
-    if not check_free_space(capture_dir, 1.0):
+    cleanup_old_captures(capture_base)
+    if not check_free_space(capture_base, 1.0):
         logging.error("Not enough free space (needs 1GB). Skipping video capture.")
         return
     

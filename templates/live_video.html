@@ -69,18 +69,33 @@
                     <input type="number" id="capture-retention" min="0" max="365" style="width: 100%; padding: 10px; box-sizing: border-box;">
                 </div>
                 
+                <div>
+                    <label for="capture-retention-size" style="font-weight: bold; display: block; margin-bottom: 5px;">Retention Size (MB, 0=Unlimited):</label>
+                    <input type="number" id="capture-retention-size" min="0" style="width: 100%; padding: 10px; box-sizing: border-box;">
+                </div>
+                
                 <button onclick="saveSettings()" style="width: 100%; margin-top: 5px;">Update Settings</button>
             </div>
         </div>
     </div>
 
-    <div class="gallery-section">
-        <div class="gallery-header">
-            <h2 style="margin: 0;">Recent Captures</h2>
-            <button onclick="loadCaptures()" style="background: #95a5a6; padding: 6px 12px; font-size: 14px;">Refresh Gallery</button>
+    <div class="gallery-section" style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <!-- Sidebar for Folders -->
+        <div style="flex: 0 0 250px; background: #fff; border-radius: 8px; border: 1px solid #ddd; padding: 15px; box-sizing: border-box; align-self: flex-start;">
+            <h3 style="margin-top: 0; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px;">Folders</h3>
+            <div id="capture-folders">
+                <!-- Folders will be loaded here -->
+            </div>
         </div>
-        <div id="gallery-grid" class="gallery-grid">
-            <!-- Captures will be loaded here -->
+        <!-- Main area for files -->
+        <div style="flex: 1; min-width: 300px;">
+            <div class="gallery-header">
+                <h2 id="current-folder-title" style="margin: 0;">Recent Captures</h2>
+                <button onclick="loadCaptures()" style="background: #95a5a6; padding: 6px 12px; font-size: 14px; border: none; border-radius: 4px; color: white;">Refresh Gallery</button>
+            </div>
+            <div id="gallery-grid" class="gallery-grid">
+                <!-- Captures will be loaded here -->
+            </div>
         </div>
     </div>
 
@@ -93,35 +108,83 @@
     </div>
 
     <script>
+        let allCaptures = [];
+        let captureFolders = {};
+        let currentSelectedFolder = '';
+
         async function loadCaptures() {
-            const grid = document.getElementById('gallery-grid');
             try {
                 const response = await fetch('/api/captures');
-                const captures = await response.json();
+                const data = await response.json();
                 
-                if (captures.length === 0) {
-                    grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #7f8c8d; padding: 40px;">No captures found in the capture folder.</p>';
-                    return;
+                // For backward compatibility if data is array
+                if (Array.isArray(data)) {
+                    allCaptures = data;
+                    captureFolders = {};
+                } else {
+                    allCaptures = data.files || [];
+                    captureFolders = data.folders || {};
                 }
 
-                grid.innerHTML = captures.map(c => `
-                    <div class="gallery-item">
-                        ${c.type === 'video' ? `
-                            <div class="video-icon">▶</div>
-                            <video src="${c.url}" muted onmouseover="this.play()" onmouseout="this.pause(); this.currentTime=0;" onclick="openModal('${c.url}', 'video')"></video>
-                        ` : `
-                            <img src="${c.url}" onclick="openModal('${c.url}', 'image')">
-                        `}
-                        <div class="info">
-                            <span class="name" title="${c.name}">${c.name}</span>
-                            <a href="${c.url}" download class="download-btn">Save</a>
-                        </div>
-                    </div>
-                `).join('');
+                renderFolders();
+                renderGrid(currentSelectedFolder);
             } catch (err) {
                 console.error("Failed to load captures", err);
-                grid.innerHTML = '<p style="color: red;">Error loading gallery.</p>';
+                document.getElementById('gallery-grid').innerHTML = '<p style="color: red;">Error loading gallery.</p>';
             }
+        }
+
+        function renderFolders() {
+            const folderList = document.getElementById('capture-folders');
+            let html = `<div style="cursor: pointer; padding: 10px; margin-bottom: 5px; background: ${currentSelectedFolder === '' ? '#3498db' : '#f8f9fa'}; color: ${currentSelectedFolder === '' ? 'white' : '#333'}; border-radius: 6px; font-weight: ${currentSelectedFolder === '' ? 'bold' : 'normal'}; transition: background 0.2s;" onclick="selectFolder('')">
+                All Captures (${allCaptures.length})
+            </div>`;
+            
+            const sortedFolders = Object.keys(captureFolders).sort().reverse();
+            
+            sortedFolders.forEach(folder => {
+                if (!folder) return;
+                const count = captureFolders[folder];
+                const isSelected = currentSelectedFolder === folder;
+                html += `<div style="cursor: pointer; padding: 10px; margin-bottom: 5px; background: ${isSelected ? '#3498db' : 'transparent'}; color: ${isSelected ? 'white' : '#333'}; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;" onclick="selectFolder('${folder}')" onmouseover="this.style.background='${isSelected ? '#3498db' : '#e2e8f0'}'" onmouseout="this.style.background='${isSelected ? '#3498db' : 'transparent'}'">
+                    <span style="font-weight: ${isSelected ? 'bold' : 'normal'};">📁 ${folder}</span>
+                    <span style="background: ${isSelected ? 'rgba(255,255,255,0.2)' : '#e2e8f0'}; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">${count}</span>
+                </div>`;
+            });
+            folderList.innerHTML = html;
+        }
+
+        function selectFolder(folder) {
+            currentSelectedFolder = folder;
+            renderFolders();
+            renderGrid(folder);
+        }
+
+        function renderGrid(folder) {
+            const grid = document.getElementById('gallery-grid');
+            document.getElementById('current-folder-title').innerText = folder ? `Captures: ${folder}` : 'All Captures';
+            
+            const filtered = folder ? allCaptures.filter(c => c.folder === folder) : allCaptures;
+            
+            if (filtered.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #7f8c8d; padding: 40px;">No captures found.</p>';
+                return;
+            }
+
+            grid.innerHTML = filtered.map(c => `
+                <div class="gallery-item">
+                    ${c.type === 'video' ? `
+                        <div class="video-icon">▶</div>
+                        <video src="${c.url}" muted onmouseover="this.play()" onmouseout="this.pause(); this.currentTime=0;" onclick="openModal('${c.url}', 'video')"></video>
+                    ` : `
+                        <img src="${c.url}" onclick="openModal('${c.url}', 'image')">
+                    `}
+                    <div class="info">
+                        <span class="name" title="${c.name}">${c.name}</span>
+                        <a href="${c.url}" download class="download-btn">Save</a>
+                    </div>
+                </div>
+            `).join('');
         }
 
         function openModal(url, type) {
@@ -203,11 +266,12 @@
                 async function saveSettings() {
             const res = document.getElementById('video-resolution').value;
             const retDays = document.getElementById('capture-retention').value;
+            const retSize = document.getElementById('capture-retention-size').value;
             try {
                 await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ CAMERA: { video_resolution: res, capture_retention_days: retDays } })
+                    body: JSON.stringify({ CAMERA: { video_resolution: res, capture_retention_days: retDays, capture_retention_size_mb: retSize } })
                 });
                 
                 const btn = document.querySelector('button');
@@ -229,6 +293,8 @@
                 document.getElementById('video-resolution').value = currentRes;
                 const currentRet = (config.CAMERA && config.CAMERA.capture_retention_days) !== undefined ? config.CAMERA.capture_retention_days : 7;
                 document.getElementById('capture-retention').value = currentRet;
+                const currentSize = (config.CAMERA && config.CAMERA.capture_retention_size_mb) !== undefined ? config.CAMERA.capture_retention_size_mb : 0;
+                document.getElementById('capture-retention-size').value = currentSize;
             } catch (err) {}
         }
         loadConfig();
