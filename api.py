@@ -392,13 +392,46 @@ def camera_scheduler_thread():
             logging.error(f"Error in camera_scheduler_thread: {e}")
             time.sleep(60)
 
+
+def check_free_space(directory, min_gb=1.0):
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage(directory)
+        free_gb = free / (1024 ** 3)
+        return free_gb >= min_gb
+    except Exception as e:
+        logging.error(f"Error checking disk space: {e}")
+        return True
+
+def cleanup_old_captures(directory):
+    try:
+        config = get_config()
+        retention_days = config.getint('CAMERA', 'capture_retention_days', fallback=7)
+        if retention_days <= 0:
+            return
+        cutoff = time.time() - (retention_days * 86400)
+        for f in os.listdir(directory):
+            if f.lower().endswith(('.jpg', '.mp4')):
+                full_path = os.path.join(directory, f)
+                if os.path.getmtime(full_path) < cutoff:
+                    os.remove(full_path)
+                    logging.info(f"Deleted old capture based on retention policy: {full_path}")
+    except Exception as e:
+        logging.error(f"Error in cleanup_old_captures: {e}")
+
 def capture_image(burst_count=1):
+
     with camera_lock:
         # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         config = get_config()
         image_dir = config.get('CAMERA', 'imagedir_captures', fallback=os.path.join(PROJECT_ROOT, 'captures/'))
         os.makedirs(image_dir, exist_ok=True)
+        
+        cleanup_old_captures(image_dir)
+        if not check_free_space(image_dir, 1.0):
+            logging.error("Not enough free space (needs 1GB). Skipping image capture.")
+            return
         
         still_cmd = 'rpicam-still'
         if shutil.which('rpicam-still') is None and shutil.which('libcamera-still'):
@@ -430,6 +463,15 @@ def capture_video_segment(duration_seconds=10):
         
     if not os.path.exists(capture_dir):
         os.makedirs(capture_dir)
+        
+    cleanup_old_captures(capture_dir)
+    if not check_free_space(capture_dir, 1.0):
+        return jsonify({"error": "Not enough free space (needs 1GB) on target partition"}), 507
+        
+    cleanup_old_captures(capture_dir)
+    if not check_free_space(capture_dir, 1.0):
+        logging.error("Not enough free space (needs 1GB). Skipping video capture.")
+        return
     
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_file = os.path.join(capture_dir, f"video_{timestamp}.mp4")

@@ -42,23 +42,36 @@
         <img id="video-stream" class="stream" src="/api/video_feed" alt="Live Video Feed">
     </div>
 
-    <div class="settings">
-        <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; align-items: center;">
-            <div class="form-group">
-                <label for="video-resolution" style="font-weight: bold; margin-right: 5px;">Stream Resolution:</label>
-                <select id="video-resolution">
-                    <option value="320x240">320x240</option>
-                    <option value="640x480">640x480</option>
-                    <option value="1024x768">1024x768</option>
-                    <option value="1280x720">1280x720 (HD)</option>
-                    <option value="1920x1080">1920x1080 (Full HD)</option>
-                </select>
-                <button onclick="saveResolution()" style="margin-left: 5px;">Update</button>
-            </div>
-            
-            <button id="capture-btn" onclick="captureVideo()" style="background: #e67e22;">Capture 1m Video</button>
+        <div class="settings" style="display: flex; flex-direction: column; gap: 20px; align-items: center; margin: 10px auto;">
+        
+        <div style="width: 100%; text-align: center;">
+            <button id="capture-btn" onclick="captureVideo()" style="background: #e67e22; width: 100%; max-width: 300px; padding: 15px; font-size: 18px;">Capture 1m Video</button>
+            <div id="capture-status" style="margin-top: 10px; font-weight: bold; color: #e67e22; height: 20px;"></div>
         </div>
-        <div id="capture-status" style="margin-top: 15px; font-weight: bold; color: #e67e22; height: 20px;"></div>
+
+        <div style="width: 100%; max-width: 500px; background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #dee2e6; box-sizing: border-box;">
+            <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #2c3e50; text-align: left;">Stream & Storage Settings</h3>
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 15px; text-align: left;">
+                
+                <div>
+                    <label for="video-resolution" style="font-weight: bold; display: block; margin-bottom: 5px;">Stream Resolution:</label>
+                    <select id="video-resolution" style="width: 100%; padding: 10px;">
+                        <option value="320x240">320x240</option>
+                        <option value="640x480">640x480</option>
+                        <option value="1024x768">1024x768</option>
+                        <option value="1280x720">1280x720 (HD)</option>
+                        <option value="1920x1080">1920x1080 (Full HD)</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="capture-retention" style="font-weight: bold; display: block; margin-bottom: 5px;">Retention (Days, 0=Forever):</label>
+                    <input type="number" id="capture-retention" min="0" max="365" style="width: 100%; padding: 10px; box-sizing: border-box;">
+                </div>
+                
+                <button onclick="saveSettings()" style="width: 100%; margin-top: 5px;">Update Settings</button>
+            </div>
+        </div>
     </div>
 
     <div class="gallery-section">
@@ -187,34 +200,35 @@
                 status.innerText = '';
             }
         }
-        async function saveResolution() {
+                async function saveSettings() {
             const res = document.getElementById('video-resolution').value;
+            const retDays = document.getElementById('capture-retention').value;
             try {
                 await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ CAMERA: { video_resolution: res } })
+                    body: JSON.stringify({ CAMERA: { video_resolution: res, capture_retention_days: retDays } })
                 });
                 
-                // Show a brief message or just wait for the restart
                 const btn = document.querySelector('button');
                 btn.disabled = true;
                 btn.innerText = 'Restarting stream...';
                 
-                // Wait 3 seconds for the backend service to restart fully
                 setTimeout(() => {
                     window.location.reload();
                 }, 3000);
             } catch (err) {
-                alert('Failed to update resolution');
+                alert('Failed to update settings');
             }
         }
-        async function loadConfig() {
+                async function loadConfig() {
             try {
                 const res = await fetch('/api/config');
                 const config = await res.json();
                 const currentRes = (config.CAMERA && config.CAMERA.video_resolution) || '640x480';
                 document.getElementById('video-resolution').value = currentRes;
+                const currentRet = (config.CAMERA && config.CAMERA.capture_retention_days) !== undefined ? config.CAMERA.capture_retention_days : 7;
+                document.getElementById('capture-retention').value = currentRet;
             } catch (err) {}
         }
         loadConfig();
