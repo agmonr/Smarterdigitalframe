@@ -190,10 +190,13 @@ def get_recent_paths(days=1):
     try:
         conn = get_db_connection()
         # Use SQLite's native datetime filtering for maximum performance
-        cursor = conn.execute(
-            "SELECT DISTINCT path FROM history WHERE datetime(timestamp) > datetime('now', '-' || ? || ' days')",
-            (days,)
-        )
+        if days is None:
+            cursor = conn.execute("SELECT DISTINCT path FROM history")
+        else:
+            cursor = conn.execute(
+                "SELECT DISTINCT path FROM history WHERE datetime(timestamp) > datetime('now', '-' || ? || ' days')",
+                (days,)
+            )
         paths = [row['path'] for row in cursor.fetchall()]
         conn.close()
         return set(paths) # Use set for O(1) lookup performance
