@@ -698,7 +698,7 @@ def main():
                     while time.time() - start_time < 10:
                         display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
                         time.sleep(0.05)
-                    last_display_time = time.time() # Update display time
+                    last_display_time = 0 # Force a refresh after hourly clock
                     continue
 
                 if is_periodic or is_scheduled:

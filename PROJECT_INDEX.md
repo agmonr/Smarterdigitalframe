@@ -5,7 +5,7 @@
 - `api.py`: Main Flask application, handles API endpoints for photos, folders, albums, and system control, including presence detection and Bluetooth pairing.
 - `manager.py`: Process manager/orchestrator for the application components.
 - `downloader.py`: Logic for scraping/downloading images from Google Photos shared albums.
-- `display.py`: Manages slideshow logic, clock overlay, and dual-range screen power scheduling.
+- `display.py`: Manages slideshow logic, clock overlay (including smooth anti-burn-in animation), and dual-range screen power scheduling.
 - `proximity.py`: Manages BLE proximity detection for presence sensing, including distance calculation and smart tag filtering.
 - `network_server.py`: Manages network-related functionality.
 - `terminal_server.py`: Provides a remote terminal interface.
