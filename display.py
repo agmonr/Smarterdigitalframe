@@ -665,7 +665,7 @@ def main():
             
             if not was_blanked and ((SHOW_HOURLY and now.hour != last_hour) or is_periodic or is_scheduled):
                 # Check if it's time to rotate image during periodic clock
-                if (is_periodic or is_scheduled) and time.time() - last_rotation_time >= INTERVAL:
+                if time.time() - last_rotation_time >= INTERVAL:
                     idx, images_shown_in_group = get_next_image_index(images, idx, images_shown_in_group)
                     last_rotation_time = time.time()
                     last_display_time = time.time()
@@ -699,7 +699,6 @@ def main():
                         display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
                         time.sleep(0.05)
                     last_display_time = time.time() # Update display time
-                    last_rotation_time = time.time() # Reset rotation time after hourly clock too
                     continue
 
                 if is_periodic or is_scheduled:
