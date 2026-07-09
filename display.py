@@ -403,7 +403,9 @@ def get_random_image_index(images):
         return 0
 
     # Get relative paths of recently shown images (from history)
-    recent_paths = common.get_recent_paths(days=None)
+    config = common.get_config()
+    retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
+    recent_paths = common.get_recent_paths(days=retention_days)
     
     indices = list(range(len(images)))
     random.shuffle(indices)
