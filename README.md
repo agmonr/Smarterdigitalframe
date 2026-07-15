@@ -104,11 +104,17 @@ DigitalFrame operates as a distributed system of specialized services, ensuring 
 - **OS:** Raspberry Pi OS (Lite recommended) with Framebuffer support.
 - **Dependencies:** `python3-venv`, `libopenjp2-7`, `libtiff6`.
 
+### Quick Install
+On a fresh/empty folder, bootstrap directly — this clones the repo and runs the installer in one step:
+```bash
+curl -fsSL https://raw.githubusercontent.com/agmonr/Smarterdigitalframe/main/install.sh | sudo bash
+```
+
 ### Step-by-Step Installation
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/digitalframe.git
-   cd digitalframe
+   git clone https://github.com/agmonr/Smarterdigitalframe.git
+   cd Smarterdigitalframe
    ```
 
 2. **Run the installer:**

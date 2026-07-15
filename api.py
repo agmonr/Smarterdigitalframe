@@ -555,6 +555,26 @@ def google_photos_sync_thread():
             print(f'Auto-sync error: {e}')
             time.sleep(600) # Wait 10 minutes before retrying on error
 
+UPDATE_CHECK_INTERVAL = 86400 # 24 hours
+
+def auto_update_thread():
+    print('Auto-update thread started (checks origin/main every 24h)')
+    while True:
+        try:
+            subprocess.run(['git', 'fetch', 'origin', 'main'], cwd=PROJECT_ROOT, check=True, capture_output=True, timeout=30)
+            local_sha = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=PROJECT_ROOT, check=True, capture_output=True, text=True).stdout.strip()
+            remote_sha = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=PROJECT_ROOT, check=True, capture_output=True, text=True).stdout.strip()
+
+            if local_sha != remote_sha:
+                logging.info(f"Update found on main ({local_sha[:7]} -> {remote_sha[:7]}); pulling and restarting...")
+                subprocess.run(['git', 'pull', '--ff-only', 'origin', 'main'], cwd=PROJECT_ROOT, check=True, capture_output=True, timeout=60)
+                _restart_frame_process()
+                return # frame.service is restarting; this thread's job is done
+        except Exception as e:
+            logging.error(f'Auto-update check failed: {e}')
+
+        time.sleep(UPDATE_CHECK_INTERVAL)
+
 def get_avg_light(frame):
     return np.mean(frame)
 
@@ -1479,4 +1499,5 @@ if __name__ == '__main__':
     threading.Thread(target=presence_detection_thread, daemon=True).start()
     threading.Thread(target=camera_scheduler_thread, daemon=True).start()
     threading.Thread(target=google_photos_sync_thread, daemon=True).start()
+    threading.Thread(target=auto_update_thread, daemon=True).start()
     app.run(host='0.0.0.0', port=5001)

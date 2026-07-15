@@ -1,12 +1,46 @@
 #!/bin/bash
 # install.sh: Install the Digital Frame as a systemd service
+#
+# Run from an existing checkout:
+#   sudo ./install.sh
+# Or bootstrap directly into an empty folder (clones the repo first):
+#   curl -fsSL https://raw.githubusercontent.com/agmonr/Smarterdigitalframe/main/install.sh | sudo bash
 
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root (use sudo)"
    exit 1
 fi
 
-PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+REPO_URL="https://github.com/agmonr/Smarterdigitalframe.git"
+INSTALL_USER="${SUDO_USER:-$(whoami)}"
+INSTALL_USER_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+DEFAULT_INSTALL_DIR="${INSTALL_USER_HOME:-/root}/Smarterdigitalframe"
+
+# When this script is piped in (e.g. `curl ... | sudo bash`), there is no
+# real file on disk, so $BASH_SOURCE doesn't point at a checkout. Detect that
+# case by checking whether a sibling common.py exists next to this script;
+# if not, clone the repo first and operate on that copy instead.
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]:-.}" )" >/dev/null 2>&1 && pwd )"
+if [ -f "$SCRIPT_DIR/common.py" ]; then
+    PROJECT_DIR="$SCRIPT_DIR"
+else
+    PROJECT_DIR="$DEFAULT_INSTALL_DIR"
+    echo "No existing checkout found next to this script; bootstrapping into $PROJECT_DIR..."
+    command -v git &> /dev/null || { apt-get update && apt-get install -y git; }
+    if [ -d "$PROJECT_DIR/.git" ]; then
+        git -C "$PROJECT_DIR" pull
+    else
+        git clone "$REPO_URL" "$PROJECT_DIR"
+    fi
+fi
+
+# frame.service runs as root (see below), and the auto-update thread in
+# api.py runs `git` commands as root too — mark the repo as safe for root to
+# operate on regardless of who owns it (e.g. a manual `git clone` done as a
+# regular user before running this script), avoiding git's "dubious
+# ownership" refusal.
+git config --global --add safe.directory "$PROJECT_DIR"
+
 SERVICE_NAME="frame.service"
 
 echo "Setting up Digital Frame service in $PROJECT_DIR..."
