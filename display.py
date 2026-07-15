@@ -410,9 +410,8 @@ def get_random_image_index(images):
     indices = list(range(len(images)))
     random.shuffle(indices)
 
-    # Try up to 5 times to find a starting point where the WHOLE group is fresh
-    for i in range(min(len(indices), 5)):
-        idx = indices[i]
+    # Try up to one attempt per image to find a starting point where the WHOLE group is fresh
+    for idx in indices:
         try:
             is_group_fresh = True
             # Check the next GROUP_SIZE images starting from idx
@@ -421,13 +420,13 @@ def get_random_image_index(images):
                 if images[check_idx] in recent_paths:
                     is_group_fresh = False
                     break
-            
+
             if is_group_fresh:
                 return idx
         except:
             pass
 
-    # If 5 failed tries, fall back to the first random one
+    # If all tries failed, fall back to the first random one
     return indices[0] if indices else 0
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
