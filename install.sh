@@ -50,7 +50,13 @@ echo "Installing system dependencies..."
 apt-get update
 apt-get install -y bluez python3-venv python3-pip nginx \
 	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite\
-       	dnsmasq network-manager apt-listchanges cloud-init libglx-mesa0
+       	dnsmasq network-manager apt-listchanges cloud-init libglx-mesa0 rfkill
+
+# Unblock Wi-Fi and Bluetooth in case they were soft-blocked (e.g. by the
+# OS default or a prior config) — BLE proximity and Wi-Fi setup need both.
+echo "Unblocking Wi-Fi and Bluetooth via rfkill..."
+rfkill unblock wifi
+rfkill unblock bluetooth
 
 # 1. Setup Virtual Environment with uv
 echo "Setting up Python virtual environment and installing requirements using uv..."
