@@ -557,6 +557,16 @@ def google_photos_sync_thread():
 
 UPDATE_CHECK_INTERVAL = 86400 # 24 hours
 
+def _find_uv():
+    # frame.service's PATH doesn't include the user bin dirs uv's installer
+    # uses, unlike install.sh's interactive shell session, so check those too.
+    for candidate in (shutil.which('uv'),
+                       os.path.expanduser('~/.local/bin/uv'),
+                       os.path.expanduser('~/.cargo/bin/uv')):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return None
+
 def auto_update_thread():
     print('Auto-update thread started (checks origin/main every 24h)')
     while True:
@@ -566,9 +576,22 @@ def auto_update_thread():
             remote_sha = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=PROJECT_ROOT, check=True, capture_output=True, text=True).stdout.strip()
 
             if local_sha != remote_sha:
-                logging.info(f"Update found on main ({local_sha[:7]} -> {remote_sha[:7]}); pulling and restarting...")
+                logging.info(f"Update found on main ({local_sha[:7]} -> {remote_sha[:7]}); pulling...")
                 subprocess.run(['git', 'pull', '--ff-only', 'origin', 'main'], cwd=PROJECT_ROOT, check=True, capture_output=True, timeout=60)
-                _restart_frame_process()
+
+                uv_bin = _find_uv()
+                if uv_bin:
+                    venv_python = os.path.join(PROJECT_ROOT, 'venv', 'bin', 'python')
+                    requirements = os.path.join(PROJECT_ROOT, 'requirements.txt')
+                    logging.info('Syncing Python dependencies...')
+                    subprocess.run([uv_bin, 'pip', 'install', '--python', venv_python, '-r', requirements],
+                                    cwd=PROJECT_ROOT, check=True, capture_output=True, timeout=300)
+                else:
+                    logging.warning('uv not found; skipping dependency sync')
+
+                logging.info('Refreshing systemd service and restarting...')
+                update_service = os.path.join(PROJECT_ROOT, 'update_service.sh')
+                subprocess.run(['sudo', update_service, PROJECT_ROOT], check=True, capture_output=True, timeout=60)
                 return # frame.service is restarting; this thread's job is done
         except Exception as e:
             logging.error(f'Auto-update check failed: {e}')
