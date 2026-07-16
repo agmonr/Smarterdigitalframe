@@ -489,6 +489,7 @@ def main():
     dir_mtime = os.path.getmtime(IMAGE_DIR) if os.path.exists(IMAGE_DIR) else 0
     was_periodic = False
     manual_prev = False
+    last_clock_idx = None
 
     with open(FB_DEV, "wb") as fb:
         while True:
@@ -673,8 +674,13 @@ def main():
                     current_image_obj = None # Force reload
 
                 # Ensure we have the current background image ready for the clock overlay
-                if now.minute != last_minute or 'current_image_obj' not in locals() or current_image_obj is None:
+                # Rebuild whenever the minute ticks over OR idx changed underneath us
+                # (e.g. manual next/prev navigation while the clock is showing) -
+                # otherwise we'd redraw a stale cached image over the freshly
+                # displayed one, making it look like the image "reverted".
+                if now.minute != last_minute or 'current_image_obj' not in locals() or current_image_obj is None or idx != last_clock_idx:
                     last_minute = now.minute
+                    last_clock_idx = idx
                     current_image_obj = None
                     if images and idx < len(images):
                         try:
