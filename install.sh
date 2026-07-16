@@ -133,45 +133,16 @@ $PROJECT_DIR/logs/*.log {
 EOF
 chmod 644 /etc/logrotate.d/digitalframe
 
-# 4. Make scripts executable
-chmod +x "$PROJECT_DIR/run_frame.sh"
-
-# 5. Create the systemd service file
-echo "Creating systemd service..."
-cat <<EOF > /etc/systemd/system/$SERVICE_NAME
-[Unit]
-Description=Digital Frame Display Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$PROJECT_DIR
-ExecStart=$PROJECT_DIR/run_frame.sh
-Restart=always
-# Ensure output to the first console
-StandardOutput=tty
-TTYPath=/dev/tty1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # Ensure config.ini exists
 if [ ! -f "$PROJECT_DIR/config.ini" ]; then
     echo "Creating config.ini from example..."
     cp "$PROJECT_DIR/config.ini.example" "$PROJECT_DIR/config.ini"
-fi 
+fi
 
-# 6. Reload systemd, enable and start the service
-#
-systemctl daemon-reload
-systemctl enable $SERVICE_NAME
-systemctl restart $SERVICE_NAME
+# 4. Create/refresh the systemd service and (re)start it
+chmod +x "$PROJECT_DIR/update_service.sh"
+"$PROJECT_DIR/update_service.sh" "$PROJECT_DIR" "$SERVICE_NAME"
 
 echo "------------------------------------------------"
 echo "Installation complete!"
-echo "Service '$SERVICE_NAME' is installed and running."
-echo "Use 'systemctl status $SERVICE_NAME' to check status."
-echo "Use 'journalctl -u $SERVICE_NAME -f' to see live logs."
 echo "------------------------------------------------"
