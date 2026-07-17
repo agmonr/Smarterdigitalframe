@@ -233,15 +233,21 @@ def load_fb_info():
         logger.error(f"Error reading framebuffer info: {e}")
         sys.exit(1)
 
+MIN_PLAUSIBLE_YEAR = 2024
+
 def is_ntp_synchronized():
-    try:
-        # Check if NTP service is active and synchronized
-        # timedatectl output format varies slightly, look for 'System clock synchronized: yes'
-        result = subprocess.run(['timedatectl', 'show', '--property=NTPSynchronized', '--value'], capture_output=True, text=True)
-        return result.stdout.strip() == 'yes'
-    except Exception as e:
-        logger.error(f"Error checking NTP status: {e}")
-        return False
+    # Pi Zero has no RTC battery, so before NTP catches up on a fresh boot the
+    # clock can read a garbage default (e.g. 1970). We only need to guard
+    # against that, not require a *live* NTP handshake - requiring
+    # `timedatectl`'s NTPSynchronized=yes left the clock permanently blank on
+    # any frame that isn't continuously NTP-synced (offline networks, NTP
+    # ports blocked, chrony not wired into timedatectl, etc.), even though
+    # fake-hwclock normally restores a plausible time across reboots
+    # regardless of network state. A sane-year check catches the actual
+    # failure mode without that dependency, and avoids spawning a subprocess
+    # on every clock redraw (this is called up to ~20x/sec during the
+    # hourly/periodic clock animation).
+    return datetime.now().year >= MIN_PLAUSIBLE_YEAR
 
 def draw_styled_text(draw, text, font, position, text_color, border_color, border_size, alpha=255):
     x, y = position
