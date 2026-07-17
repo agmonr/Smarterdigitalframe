@@ -162,6 +162,158 @@ def get_albums():
             return []
     return []
 
+# Google's shared-album page only embeds the first ~300 items in the initial HTML;
+# the rest load via this internal (undocumented) RPC as the browser scrolls. It works
+# anonymously because the continuation token is derived from the album's own data, not
+# from a login session. Capped well above Google's 20,000-item shared-album limit / 300
+# per page (~67 pages) as a safety net against an infinite loop.
+BATCHEXECUTE_URL = "https://photos.google.com/_/PhotosUi/data/batchexecute"
+MAX_PAGINATION_CALLS = 200
+
+# Support lh3, lh4, lh5, etc. and be broad with characters (until a quote or space)
+IMAGE_URL_PATTERN = r'(https://lh[0-9]\.googleusercontent\.com/[^\s"\'\]]+|https://photos\.google\.com/share/[^\s"\'\]]+)'
+# More specific markers to avoid false positives with photos (which often have "is_video": false)
+VIDEO_TRUE_MARKERS = ['"is_video":true', '[true,null,"video"]', 'video-downloads', 'video-preview']
+# General markers that are rare near photos but common near videos
+GENERAL_VIDEO_MARKERS = ['duration', '.mp4', '.mov', '.avi', '.mkv']
+
+def _extract_image_urls(text, found_urls):
+    """Regex-scrape candidate image URLs out of HTML or a batchexecute JSON response, filtering out videos."""
+    for match in re.finditer(IMAGE_URL_PATTERN, text):
+        img_url = match.group(1)
+
+        # Extract 100 chars around the match (reduced from 200 for fewer false positives)
+        start_ctx = max(0, match.start() - 100)
+        end_ctx = min(len(text), match.end() + 100)
+        context = text[start_ctx:end_ctx].lower().replace(' ', '')  # remove spaces for easier matching
+
+        is_video = any(marker in context for marker in VIDEO_TRUE_MARKERS) or \
+                   any(marker in context for marker in GENERAL_VIDEO_MARKERS)
+
+        if is_video:
+            logger.debug(f"Skipping potential video content: {img_url[:50]}... (found video marker in context)")
+            continue
+
+        found_urls.add(img_url)
+
+def _get_continuation_token(html_text):
+    """Extracts the pagination cursor Google embeds alongside the initial 300-item batch (ds:1[2])."""
+    m = re.search(r"AF_initDataCallback\(\{key: 'ds:1'.*?, data:(.*?), sideChannel:", html_text, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+        return data[2] if len(data) > 2 and isinstance(data[2], str) else None
+    except (json.JSONDecodeError, IndexError):
+        return None
+
+def _get_build_label(html_text):
+    """Extracts the 'bl' (build label) param required by batchexecute, from WIZ_global_data.cfb2h."""
+    m = re.search(r'"cfb2h":"([^"]*)"', html_text)
+    return m.group(1) if m else None
+
+def _get_session_id(html_text):
+    """Extracts a usable f.sid value from WIZ_global_data.FdrFJe (any large int works; not validated)."""
+    m = re.search(r'"FdrFJe":"?(-?\d+)"?', html_text)
+    return m.group(1) if m else "0"
+
+def _parse_batchexecute_response(text):
+    """Decodes the )]}'-prefixed, length-prefixed-chunk framing batchexecute responses use.
+    Declared chunk lengths are UTF-16 code-unit counts (JS string semantics), which can mismatch
+    Python's character indexing, so each chunk is decoded with raw_decode instead of being sliced
+    to the declared length."""
+    if text.startswith(")]}'"):
+        text = text[4:].lstrip("\n")
+    decoder = json.JSONDecoder()
+    pos = 0
+    n = len(text)
+    chunks = []
+    while pos < n:
+        nl = text.find("\n", pos)
+        if nl == -1:
+            break
+        length_str = text[pos:nl].strip()
+        if not length_str.isdigit():
+            break
+        try:
+            obj, end = decoder.raw_decode(text, nl + 1)
+        except json.JSONDecodeError:
+            break
+        chunks.append(obj)
+        pos = end
+        while pos < n and text[pos] == "\n":
+            pos += 1
+    return chunks
+
+def _fetch_next_page(share_id, share_key, token, bl, session_id, reqid, headers):
+    """Calls the snAcKc RPC with a continuation token; returns (raw_payload_text, next_token)."""
+    inner = json.dumps([share_id, token, None, share_key], separators=(',', ':'))
+    outer = json.dumps([[["snAcKc", inner, None, "generic"]]], separators=(',', ':'))
+    params = {
+        "rpcids": "snAcKc",
+        "source-path": f"/share/{share_id}",
+        "f.sid": session_id,
+        "bl": bl,
+        "hl": "en",
+        "soc-app": "165",
+        "soc-platform": "1",
+        "soc-device": "1",
+        "_reqid": str(reqid),
+        "rt": "c",
+    }
+    post_headers = dict(headers, **{"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"})
+    resp = requests.post(BATCHEXECUTE_URL, params=params, data={"f.req": outer}, headers=post_headers, timeout=20)
+    resp.raise_for_status()
+
+    for obj in _parse_batchexecute_response(resp.text):
+        if isinstance(obj, list) and obj and isinstance(obj[0], list) and len(obj[0]) > 2 \
+                and obj[0][0] == "wrb.fr" and obj[0][1] == "snAcKc":
+            payload_str = obj[0][2]
+            next_token = None
+            try:
+                payload = json.loads(payload_str)
+                next_token = payload[0] if payload else None
+            except (json.JSONDecodeError, IndexError, TypeError):
+                pass
+            return payload_str, next_token
+    return None, None
+
+def _fetch_paginated_urls(final_url, initial_html, headers, album_id):
+    """Fetches image URLs beyond the ~300 Google embeds in the initial share page."""
+    extra_urls = set()
+
+    share_match = re.search(r'/share/([^/?]+)', final_url)
+    key_match = re.search(r'[?&]key=([^&]+)', final_url)
+    if not share_match or not key_match:
+        return extra_urls
+    share_id = share_match.group(1)
+    share_key = key_match.group(1)
+
+    token = _get_continuation_token(initial_html)
+    bl = _get_build_label(initial_html)
+    session_id = _get_session_id(initial_html)
+    if not token or not bl:
+        return extra_urls
+
+    reqid = 100000
+    calls = 0
+    while token and calls < MAX_PAGINATION_CALLS:
+        calls += 1
+        reqid += 1
+        try:
+            payload_str, next_token = _fetch_next_page(share_id, share_key, token, bl, session_id, reqid, headers)
+        except requests.RequestException as e:
+            logger.warning(f"Pagination request failed for {album_id} after {calls} page(s): {e}")
+            break
+        if payload_str is None:
+            break
+        _extract_image_urls(payload_str, extra_urls)
+        token = next_token
+        time.sleep(0.5)  # be gentle with Google's endpoint
+
+    logger.info(f"Pagination fetched {len(extra_urls)} additional URLs for {album_id} across {calls} page(s).")
+    return extra_urls
+
 def download_album(album_id, url, output_dir, force_fast=False):
     check_storage_guardrail()
     update_album_status(album_id, "Syncing...")
