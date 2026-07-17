@@ -761,7 +761,12 @@ def main():
                         if (now - prev).total_seconds() < 180: # 3 minutes window
                             is_scheduled = True; break
             
-            if not was_blanked and ((SHOW_HOURLY and now.hour != last_hour) or is_periodic or is_scheduled):
+            # A manual 'Show' (dashboard or motion capture) leaves idx as a
+            # pending sentinel (-1) until the next real rotation resolves it.
+            # Don't let the clock overlay render a background-less/black frame
+            # over that freshly shown photo in the meantime.
+            has_valid_idx = not images or 0 <= idx < len(images)
+            if not was_blanked and has_valid_idx and ((SHOW_HOURLY and now.hour != last_hour) or is_periodic or is_scheduled):
                 # Check if it's time to rotate image during periodic clock
                 if time.time() - last_rotation_time >= INTERVAL:
                     idx, images_shown_in_group = get_next_image_index(images, idx, images_shown_in_group)
@@ -778,7 +783,7 @@ def main():
                     last_minute = now.minute
                     last_clock_idx = idx
                     current_image_obj = None
-                    if images and idx < len(images):
+                    if images and 0 <= idx < len(images):
                         try:
                             current_image_obj = Image.open(os.path.join(IMAGE_DIR, images[idx]))
                             current_image_obj = ImageOps.exif_transpose(current_image_obj)
@@ -799,14 +804,14 @@ def main():
                     logger.info(f"Displaying hourly clock at {now.hour}:00")
                     start_time = time.time()
                     while time.time() - start_time < 10:
-                        display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
+                        display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and 0 <= idx < len(images) else None)
                         time.sleep(0.05)
                     last_display_time = 0 # Force a refresh after hourly clock
                     continue
 
                 if is_periodic or is_scheduled:
                     was_periodic = True
-                    display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
+                    display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and 0 <= idx < len(images) else None)
                     # A stale last_display_time == 0 (e.g. left over from the hourly
                     # clock block a moment ago) would make the should_refresh logic
                     # below think a forced refresh is still pending and immediately
@@ -852,7 +857,7 @@ def main():
                 # Just refresh SAME image for clock update
                 should_refresh = True
 
-            if should_refresh and images:
+            if should_refresh and images and 0 <= idx < len(images):
                 display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=True)
                 last_display_time = time.time()
                 last_minute = now.minute
