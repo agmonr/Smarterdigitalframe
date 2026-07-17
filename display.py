@@ -8,6 +8,7 @@ import logging
 import json
 import tempfile
 import subprocess
+import socket
 import urllib.request
 from datetime import datetime
 from croniter import croniter
@@ -31,6 +32,7 @@ def load_config_values():
     global IMAGE_DIR, INTERVAL, GROUP_SIZE, FB_DEV, COLOR_ORDER, LOG_LEVEL_STR, LOG_FILE
     global SHOW_TIME, TIME_FORMAT, TIME_FONT_SIZE, TIME_LOCATION, TIME_COLOR, TIME_BORDER_COLOR, TIME_BORDER_SIZE, NEG_TIME, TIME_ALPHA
     global SHOW_HOURLY, SHOW_PERIODIC, SHOW_SCHEDULED, CLOCK_SCHEDULE_1, CLOCK_SCHEDULE_2, SCREEN_OFF_HOUR, SCREEN_ON_HOUR, SCREEN_OFF_HOUR_2, SCREEN_ON_HOUR_2, SELECTED_FOLDERS, WEAK_MACHINE
+    global SHOW_NETWORK_INFO, NETWORK_INFO_DURATION, NETWORK_INFO_FONT_SIZE, NETWORK_INFO_LOCATION, NETWORK_INFO_COLOR, NETWORK_INFO_BORDER_COLOR
 
     config = common.get_config()
     PROJECT_ROOT = common.PROJECT_ROOT
@@ -79,6 +81,13 @@ def load_config_values():
     TIME_ALPHA = config.getint('DEFAULT', 'timealpha', fallback=255)
 
     SHOW_HOURLY = config.getboolean('DEFAULT', 'showhourlytime', fallback=True)
+
+    SHOW_NETWORK_INFO = config.getboolean('DEFAULT', 'shownetworkinfo', fallback=True)
+    NETWORK_INFO_DURATION = config.getint('DEFAULT', 'networkinfoduration', fallback=120)
+    NETWORK_INFO_FONT_SIZE = config.getint('DEFAULT', 'networkinfofontsize', fallback=36)
+    NETWORK_INFO_LOCATION = config.get('DEFAULT', 'networkinfolocation', fallback='bottom-left').lower()
+    NETWORK_INFO_COLOR = config.get('DEFAULT', 'networkinfocolor', fallback='#ffffff')
+    NETWORK_INFO_BORDER_COLOR = config.get('DEFAULT', 'networkinfobordercolor', fallback='#000000')
 
     SCREEN_OFF_HOUR = config.getint('DEFAULT', 'screenoffhour', fallback=22)
     SCREEN_ON_HOUR = config.getint('DEFAULT', 'screenonhour', fallback=7)
@@ -315,6 +324,78 @@ def draw_time(image, format_str, font_size, location=None, color=None, border_co
     except Exception as e:
         logger.error(f"Error drawing time: {e}")
 
+def get_system_uptime_seconds():
+    try:
+        with open('/proc/uptime', 'r') as f:
+            return float(f.readline().split()[0])
+    except Exception:
+        return None
+
+# Fetched once per boot and cached: SSID/IP won't change during the short
+# post-boot display window, and nmcli is too slow to call every loop tick.
+_cached_network_info = None
+
+def get_network_info():
+    """Returns (ssid, ip) for the connected Wi-Fi network; either may be None if unavailable."""
+    ssid = None
+    try:
+        result = subprocess.run(['nmcli', '-t', '-f', 'TYPE,NAME', 'con', 'show', '--active'],
+                                 capture_output=True, text=True, timeout=5)
+        for line in result.stdout.strip().split('\n'):
+            parts = line.split(':')
+            if len(parts) >= 2 and parts[0].strip() in ('802-11-wireless', 'wifi'):
+                ssid = parts[1].strip()
+                break
+    except Exception as e:
+        logger.debug(f"Could not determine SSID: {e}")
+
+    ip = None
+    try:
+        # UDP "connect" doesn't send any packets, just asks the kernel which local
+        # interface/address would be used to reach an external host.
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception as e:
+        logger.debug(f"Could not determine IP address: {e}")
+
+    return ssid, ip
+
+def network_info_active():
+    if not SHOW_NETWORK_INFO:
+        return False
+    uptime = get_system_uptime_seconds()
+    return uptime is not None and uptime < NETWORK_INFO_DURATION
+
+def draw_network_info(image, ssid, ip, font_size, location, color, border_color):
+    try:
+        font = ImageFont.truetype(FONT_PATH, font_size)
+        draw = ImageDraw.Draw(image)
+        lines = [f"Wi-Fi: {ssid or 'Not connected'}", f"IP: {ip or 'N/A'}"]
+
+        line_boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+        line_heights = [b[3] - b[1] for b in line_boxes]
+        line_widths = [b[2] - b[0] for b in line_boxes]
+        block_w = max(line_widths)
+        line_spacing = 8
+        block_h = sum(line_heights) + line_spacing * (len(lines) - 1)
+        padding = 40
+
+        if location == "center": x, y = (WIDTH - block_w) // 2, (HEIGHT - block_h) // 2
+        elif location == "top-left": x, y = padding, padding
+        elif location == "top-right": x, y = WIDTH - block_w - padding, padding
+        elif location == "bottom-right": x, y = WIDTH - block_w - padding, HEIGHT - block_h - padding
+        else: x, y = padding, HEIGHT - block_h - padding  # bottom-left default
+
+        cur_y = y
+        for line, h in zip(lines, line_heights):
+            draw_styled_text(draw, line, font, (x, cur_y), color, border_color, 2)
+            cur_y += h + line_spacing
+    except Exception as e:
+        logger.error(f"Error drawing network info: {e}")
+
 def write_to_fb(fb, bg):
     data = np.array(bg)
     if BPP == 32:
@@ -366,7 +447,22 @@ def display_image(fb, img_path, save=True):
             # Drawing time directly on the resized image is slightly more memory efficient
             if SHOW_TIME:
                 draw_time(bg, TIME_FORMAT, TIME_FONT_SIZE)
-                
+
+            # Show Wi-Fi SSID/IP for a short window after boot. Note: this only
+            # runs through display_image()'s own redraws, not the periodic/
+            # scheduled/hourly clock's separate cached-background path
+            # (display_hourly_clock) - so if that clock overlay also fires
+            # within the post-boot window, network info briefly won't be
+            # shown during those specific redraws. Deliberately not plumbed
+            # through both paths for this short-lived, low-stakes overlay.
+            if network_info_active():
+                global _cached_network_info
+                if _cached_network_info is None:
+                    _cached_network_info = get_network_info()
+                ssid, ip = _cached_network_info
+                draw_network_info(bg, ssid, ip, NETWORK_INFO_FONT_SIZE, NETWORK_INFO_LOCATION,
+                                   NETWORK_INFO_COLOR, NETWORK_INFO_BORDER_COLOR)
+
             write_to_fb(fb, bg)
             update_state("image", img_path)
             update_history(img_path, save=save)
