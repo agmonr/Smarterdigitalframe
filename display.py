@@ -807,6 +807,13 @@ def main():
                 if is_periodic or is_scheduled:
                     was_periodic = True
                     display_hourly_clock(fb, current_image_obj, os.path.join(IMAGE_DIR, images[idx]) if images and idx < len(images) else None)
+                    # A stale last_display_time == 0 (e.g. left over from the hourly
+                    # clock block a moment ago) would make the should_refresh logic
+                    # below think a forced refresh is still pending and immediately
+                    # redraw the image WITHOUT the clock overlay, making the clock
+                    # flicker off right after it appears. The clock draw above counts
+                    # as this iteration's display, so mark it as such.
+                    last_display_time = time.time()
                     # Don't use 'continue' here, allow the rest of the loop to run
                     # so that 'should_refresh' logic can trigger image rotation.
                     # We use a small sleep to maintain responsiveness for animations
