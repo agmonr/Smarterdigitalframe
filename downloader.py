@@ -279,7 +279,16 @@ def _fetch_next_page(share_id, share_key, token, bl, session_id, reqid, headers)
     return None, None
 
 def _fetch_paginated_urls(final_url, initial_html, headers, album_id):
-    """Fetches image URLs beyond the ~300 Google embeds in the initial share page."""
+    """Fetches image URLs beyond the ~300 Google embeds in the initial share page.
+
+    Known ceiling: anonymous (no login) requests only ever get one further page from
+    this RPC (~600 items total), even for larger albums — the server stops returning a
+    next_token past that point. A logged-in session gets further pages, but that needs
+    real Google account session cookies wired in, which was deliberately not done here
+    (a live session cookie baked into an auto-updating, network-exposed script is a
+    meaningfully bigger attack surface than this feature is worth). So for albums over
+    ~600 items, this intentionally won't fetch everything.
+    """
     extra_urls = set()
 
     share_match = re.search(r'/share/([^/?]+)', final_url)
@@ -348,35 +357,13 @@ def download_album(album_id, url, output_dir, force_fast=False):
             return False
 
         found_urls = set()
-        # Use finditer to check context around each URL
         all_text = response.text
-        
-        # Combine patterns into one for context checking
-        # Support lh3, lh4, lh5, etc. and be broad with characters (until a quote or space)
-        combined_pattern = r'(https://lh[0-9]\.googleusercontent\.com/[^\s"\'\]]+|https://photos\.google\.com/share/[^\s"\'\]]+)'
-        
-        # More specific markers to avoid false positives with photos (which often have "is_video": false)
-        video_true_markers = ['"is_video":true', '[true,null,"video"]', 'video-downloads', 'video-preview']
-        # General markers that are rare near photos but common near videos
-        general_video_markers = ['duration', '.mp4', '.mov', '.avi', '.mkv']
-        
-        for match in re.finditer(combined_pattern, all_text):
-            img_url = match.group(1)
-            
-            # Extract 100 chars around the match (reduced from 200 for fewer false positives)
-            start_ctx = max(0, match.start() - 100)
-            end_ctx = min(len(all_text), match.end() + 100)
-            context = all_text[start_ctx:end_ctx].lower().replace(' ', '') # remove spaces for easier matching
-            
-            is_video = any(marker in context for marker in video_true_markers) or \
-                       any(marker in context for marker in general_video_markers)
-            
-            if is_video:
-                logger.debug(f"Skipping potential video content: {img_url[:50]}... (found video marker in context)")
-                continue
-                
-            found_urls.add(img_url)
-        
+        _extract_image_urls(all_text, found_urls)
+
+        # The initial page only embeds the first ~300 items; page through the rest via
+        # Google's internal batchexecute RPC (see _fetch_paginated_urls docstring).
+        found_urls |= _fetch_paginated_urls(response.url, all_text, headers, album_id)
+
         logger.info(f"Found {len(found_urls)} potential URLs in {album_id} before filtering.")
         
         # Filter: 

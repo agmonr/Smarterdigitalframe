@@ -58,6 +58,33 @@ echo "Unblocking Wi-Fi and Bluetooth via rfkill..."
 rfkill unblock wifi
 rfkill unblock bluetooth
 
+# Mount the boot partition read-only to further reduce SD card wear (this
+# repo already keeps frequently-written runtime state off the card via
+# /dev/shm; see common.py). Raspberry Pi OS Bookworm+ mounts it at
+# /boot/firmware, older releases at /boot. Takes effect on next reboot;
+# `mount -o remount,rw /boot...` before editing config.txt etc.
+BOOT_MOUNT=""
+if mountpoint -q /boot/firmware 2>/dev/null; then
+    BOOT_MOUNT="/boot/firmware"
+elif mountpoint -q /boot 2>/dev/null; then
+    BOOT_MOUNT="/boot"
+fi
+
+if [ -n "$BOOT_MOUNT" ]; then
+    FSTAB_LINE=$(grep -E "^\S+[[:space:]]+${BOOT_MOUNT//\//\\/}[[:space:]]" /etc/fstab || true)
+    if [ -z "$FSTAB_LINE" ]; then
+        echo "No /etc/fstab entry found for $BOOT_MOUNT; skipping read-only change."
+    elif echo "$FSTAB_LINE" | awk '{print $4}' | grep -qw "ro"; then
+        echo "$BOOT_MOUNT is already read-only in /etc/fstab."
+    else
+        echo "Setting $BOOT_MOUNT to read-only in /etc/fstab (takes effect after reboot)..."
+        cp /etc/fstab "/etc/fstab.bak.$(date +%Y%m%d%H%M%S)"
+        sed -i -E "s|^(\S+[[:space:]]+${BOOT_MOUNT//\//\\/}[[:space:]]+\S+[[:space:]]+)([^[:space:]]+)|\1\2,ro|" /etc/fstab
+    fi
+else
+    echo "Could not detect boot partition mount point; skipping fstab read-only change."
+fi
+
 # 1. Setup Virtual Environment with uv
 echo "Setting up Python virtual environment and installing requirements using uv..."
 
