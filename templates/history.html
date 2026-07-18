@@ -73,17 +73,24 @@
         }
 
         .timestamp { font-size: 11px; color: #95a5a6; font-variant-numeric: tabular-nums; }
-        
-        #preview-filename { 
-            margin-bottom: 15px; 
-            font-weight: 600; 
-            font-size: 14px; 
-            color: #34495e; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
+
+        .source-badge { display: block; font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .source-badge.folder { color: #95a5a6; }
+        .source-badge.album { color: #3498db; cursor: pointer; text-decoration: none; }
+        .source-badge.album:hover { text-decoration: underline; }
+
+        #preview-filename {
+            margin-bottom: 4px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #34495e;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             width: 100%;
         }
+
+        #preview-source { margin-bottom: 15px; }
 
         .img-container {
             flex: 1;
@@ -210,7 +217,8 @@
             <!-- Detail Preview -->
             <div class="preview-pane" id="preview-section">
                 <div id="preview-filename">Select an image</div>
-                
+                <div id="preview-source" style="display: none;"></div>
+
                 <div class="img-container">
                     <img id="preview-img" class="img-preview" src="" style="display: none;">
                     <div id="no-selection" style="color: #bdc3c7; font-size: 14px;">No image selected</div>
@@ -232,6 +240,53 @@
         let selectedPath = null;
         let currentHistory = [];
         let currentIndex = -1;
+        let albumsList = [];
+
+        async function loadAlbums() {
+            try {
+                const response = await fetch(`${API_BASE}/albums`);
+                albumsList = await response.json();
+            } catch (e) {
+                console.error("Error loading albums", e);
+                albumsList = [];
+            }
+        }
+
+        // Given a history item's path (relative to the image dir), figure out
+        // whether it lives in a synced Google Photos album (per albums.json's
+        // "path" field) or just a plain local folder.
+        function getSourceInfo(path) {
+            if (!path || path.indexOf('/') === -1) return null;
+            const folder = path.substring(0, path.lastIndexOf('/'));
+
+            const album = albumsList.find(a => {
+                const albumPath = (a.path || '').replace(/\/+$/, '');
+                return folder === albumPath || folder.startsWith(albumPath + '/');
+            });
+
+            if (album) {
+                return { type: 'album', name: (album.id || '').trim(), url: album.url };
+            }
+            return { type: 'folder', name: folder };
+        }
+
+        function buildSourceElement(source, tag) {
+            const el = document.createElement(tag || 'div');
+            el.classList.add('source-badge');
+            if (source.type === 'album') {
+                el.classList.add('album');
+                el.textContent = `📷 ${source.name} ↗`;
+                el.title = 'Open album in Google Photos';
+                el.onclick = (e) => {
+                    e.stopPropagation();
+                    window.open(source.url, '_blank', 'noopener');
+                };
+            } else {
+                el.classList.add('folder');
+                el.textContent = `📁 ${source.name}`;
+            }
+            return el;
+        }
 
         async function showSelected() {
             if (!selectedFilename) return;
@@ -298,7 +353,12 @@
                     const div = document.createElement('div');
                     div.className = 'history-item';
                     div.onclick = () => selectImage(item.name, div, item.path, index);
-                    
+
+                    const leftCol = document.createElement('div');
+                    leftCol.style.flex = '1';
+                    leftCol.style.minWidth = '0';
+                    leftCol.style.paddingRight = '10px';
+
                     const nameDiv = document.createElement('div');
                     nameDiv.textContent = item.name;
                     nameDiv.style.fontSize = '13px';
@@ -306,10 +366,13 @@
                     nameDiv.style.overflow = 'hidden';
                     nameDiv.style.textOverflow = 'ellipsis';
                     nameDiv.style.whiteSpace = 'nowrap';
-                    nameDiv.style.paddingRight = '10px';
-                    nameDiv.style.flex = '1';
-                    nameDiv.style.minWidth = '0';
-                    
+                    leftCol.appendChild(nameDiv);
+
+                    const source = getSourceInfo(item.path);
+                    if (source) {
+                        leftCol.appendChild(buildSourceElement(source));
+                    }
+
                     const timeSpan = document.createElement('span');
                     const date = new Date(item.timestamp);
                     timeSpan.className = 'timestamp';
@@ -317,8 +380,8 @@
                     timeSpan.style.flexShrink = '0';
                     timeSpan.style.whiteSpace = 'nowrap';
                     timeSpan.style.marginLeft = '10px';
-                    
-                    div.appendChild(nameDiv);
+
+                    div.appendChild(leftCol);
                     div.appendChild(timeSpan);
                     list.appendChild(div);
 
@@ -352,6 +415,16 @@
             
             document.getElementById('preview-filename').textContent = filename;
             document.getElementById('no-selection').style.display = 'none';
+
+            const previewSource = document.getElementById('preview-source');
+            previewSource.innerHTML = '';
+            const source = getSourceInfo(path);
+            if (source) {
+                previewSource.style.display = 'block';
+                previewSource.appendChild(buildSourceElement(source, 'span'));
+            } else {
+                previewSource.style.display = 'none';
+            }
             
             const img = document.getElementById('preview-img');
             const downloadLink = document.getElementById('download-link');
@@ -419,7 +492,7 @@
             }
         }
 
-        loadHistory();
+        loadAlbums().then(loadHistory);
         checkCameraVisibility();
     </script>
 </body>
