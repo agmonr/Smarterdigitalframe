@@ -49,7 +49,7 @@ echo "Setting up Digital Frame service in $PROJECT_DIR..."
 echo "Installing system dependencies..."
 apt-get update
 apt-get install -y bluez python3-venv python3-pip nginx \
-	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite\
+	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite btop htop vim\
        	dnsmasq network-manager apt-listchanges cloud-init libglx-mesa0 rfkill
 
 # Unblock Wi-Fi and Bluetooth in case they were soft-blocked (e.g. by the
