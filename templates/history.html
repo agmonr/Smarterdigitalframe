@@ -79,6 +79,15 @@
         .source-badge.album { color: #3498db; cursor: pointer; text-decoration: none; }
         .source-badge.album:hover { text-decoration: underline; }
 
+        .thumb-wrapper { position: relative; width: 44px; height: 44px; flex-shrink: 0; margin-right: 12px; border-radius: 6px; overflow: hidden; background: #eee; }
+        .history-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .thumb-album-link {
+            position: absolute; bottom: 0; right: 0; width: 18px; height: 18px;
+            background: rgba(52, 152, 219, 0.92); color: white; border-radius: 6px 0 0 0;
+            display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer;
+        }
+        .thumb-album-link:hover { background: #2980b9; }
+
         #preview-filename {
             margin-bottom: 4px;
             font-weight: 600;
@@ -354,6 +363,28 @@
                     div.className = 'history-item';
                     div.onclick = () => selectImage(item.name, div, item.path, index);
 
+                    const source = getSourceInfo(item.path);
+
+                    const thumbWrapper = document.createElement('div');
+                    thumbWrapper.className = 'thumb-wrapper';
+                    const thumbImg = document.createElement('img');
+                    thumbImg.className = 'history-thumb';
+                    thumbImg.loading = 'lazy';
+                    thumbImg.alt = item.name;
+                    thumbImg.src = `${API_BASE}/image/${encodeURIComponent(item.path || item.name)}`;
+                    thumbWrapper.appendChild(thumbImg);
+                    if (source && source.type === 'album') {
+                        const linkIcon = document.createElement('div');
+                        linkIcon.className = 'thumb-album-link';
+                        linkIcon.textContent = '↗';
+                        linkIcon.title = `Open ${source.name} in Google Photos`;
+                        linkIcon.onclick = (e) => {
+                            e.stopPropagation();
+                            window.open(source.url, '_blank', 'noopener');
+                        };
+                        thumbWrapper.appendChild(linkIcon);
+                    }
+
                     const leftCol = document.createElement('div');
                     leftCol.style.flex = '1';
                     leftCol.style.minWidth = '0';
@@ -368,7 +399,6 @@
                     nameDiv.style.whiteSpace = 'nowrap';
                     leftCol.appendChild(nameDiv);
 
-                    const source = getSourceInfo(item.path);
                     if (source) {
                         leftCol.appendChild(buildSourceElement(source));
                     }
@@ -381,6 +411,7 @@
                     timeSpan.style.whiteSpace = 'nowrap';
                     timeSpan.style.marginLeft = '10px';
 
+                    div.appendChild(thumbWrapper);
                     div.appendChild(leftCol);
                     div.appendChild(timeSpan);
                     list.appendChild(div);
