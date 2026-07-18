@@ -729,26 +729,34 @@ def main():
                 if images:
                     # Try to use history to find the previous image
                     navigated = False
-                    try:
-                        history = common.get_history(limit=50)
-                        current_path = images[idx]
-                        found_idx = -1
-                        for i in range(len(history)):
-                            if history[i]["path"] == current_path:
-                                found_idx = i
-                                break
-                        if found_idx != -1 and found_idx + 1 < len(history):
-                            prev_path = history[found_idx + 1]["path"]
-                            for i in range(len(images)):
-                                if images[i] == prev_path:
-                                    idx = i
-                                    navigated = True
+                    if idx != -1:
+                        try:
+                            history = common.get_history(limit=50)
+                            current_path = images[idx]
+                            found_idx = -1
+                            for i in range(len(history)):
+                                if history[i]["path"] == current_path:
+                                    found_idx = i
                                     break
-                    except Exception as e:
-                        logger.error(f"Error navigating via history: {e}")
-                    
+                            if found_idx != -1 and found_idx + 1 < len(history):
+                                prev_path = history[found_idx + 1]["path"]
+                                for i in range(len(images)):
+                                    if images[i] == prev_path:
+                                        idx = i
+                                        navigated = True
+                                        break
+                        except Exception as e:
+                            logger.error(f"Error navigating via history: {e}")
+
                     if not navigated:
-                        idx = (idx - 1) % len(images)
+                        # idx == -1 is the "pending" sentinel left by a manual Show
+                        # that hasn't been resolved into a real slideshow position
+                        # yet (see SHOW_IMAGE_FILE handling above). Treat it as
+                        # "before image 0" so we land on the last image, instead of
+                        # letting Python's negative indexing silently use idx=-1 as
+                        # a real array index (images[-1]) and then wrap it again to
+                        # an unrelated position.
+                        idx = len(images) - 1 if idx == -1 else (idx - 1) % len(images)
                     
                     display_image(fb, os.path.join(IMAGE_DIR, images[idx]), save=False)
                     last_display_time = time.time()
