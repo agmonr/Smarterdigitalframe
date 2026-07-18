@@ -254,6 +254,15 @@ def draw_styled_text(draw, text, font, position, text_color, border_color, borde
     
     # Convert colors to RGBA if they are not already
     def to_rgba(color, a):
+        if draw.mode == 'L':
+            # Single-channel mask (used by the negative-time compositing
+            # path): PIL rejects RGBA tuples here, it wants a plain int.
+            if isinstance(color, str):
+                from PIL import ImageColor
+                return ImageColor.getrgb(color)[0]
+            elif isinstance(color, (list, tuple)):
+                return color[0]
+            return color
         if isinstance(color, str):
             # If it's a string, we need to convert it to a tuple first
             from PIL import ImageColor
