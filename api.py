@@ -575,7 +575,19 @@ def auto_update_thread():
             local_sha = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=PROJECT_ROOT, check=True, capture_output=True, text=True).stdout.strip()
             remote_sha = subprocess.run(['git', 'rev-parse', 'origin/main'], cwd=PROJECT_ROOT, check=True, capture_output=True, text=True).stdout.strip()
 
+            # Plain inequality also trips on a local commit that hasn't been
+            # pushed yet (local ahead of origin/main), which would pull
+            # (a no-op), then restart anyway - forever, every cycle. Only
+            # treat this as an available update if origin/main actually has
+            # commits we don't have, i.e. HEAD is an ancestor of origin/main.
+            is_update_available = False
             if local_sha != remote_sha:
+                is_update_available = subprocess.run(
+                    ['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'],
+                    cwd=PROJECT_ROOT, capture_output=True
+                ).returncode == 0
+
+            if is_update_available:
                 logging.info(f"Update found on main ({local_sha[:7]} -> {remote_sha[:7]}); pulling...")
                 subprocess.run(['git', 'pull', '--ff-only', 'origin', 'main'], cwd=PROJECT_ROOT, check=True, capture_output=True, timeout=60)
 
