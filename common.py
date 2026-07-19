@@ -34,6 +34,7 @@ else:
     if not os.path.exists('/dev/shm'): SHM_ROOT = PROJECT_ROOT
 
 STATE_FILE = os.path.join(SHM_ROOT, 'state.json')
+WIFI_STATUS_FILE = os.path.join(SHM_ROOT, 'wifi_status.json')
 SYNC_STATUS_FILE = os.path.join(SHM_ROOT, 'sync_status.json')
 ALBUM_STATUS_FILE = os.path.join(SHM_ROOT, 'album_status.json')
 MANUAL_ON_FILE = os.path.join(SHM_ROOT, 'manual_on.tmp')
@@ -350,6 +351,25 @@ def save_state(state):
             json.dump(state, f)
     except Exception as e:
         print(f"Error saving state: {e}")
+
+def get_wifi_status():
+    """Returns {'connected': bool, 'updated': epoch}. Defaults to connected=True
+    when no status has been written yet (e.g. early boot), so display.py doesn't
+    flash a false 'wifi lost' icon before the watchdog's first check runs."""
+    if os.path.exists(WIFI_STATUS_FILE):
+        try:
+            with open(WIFI_STATUS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"connected": True}
+
+def set_wifi_status(connected):
+    try:
+        with open(WIFI_STATUS_FILE, 'w') as f:
+            json.dump({"connected": connected, "updated": time.time()}, f)
+    except Exception as e:
+        print(f"Error saving wifi status: {e}")
 
 def get_image_dir():
     config = get_config()

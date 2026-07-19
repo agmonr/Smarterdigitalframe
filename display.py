@@ -120,6 +120,28 @@ HEIGHT = 0
 BPP = 0
 STRIDE = 0
 
+# Updated once per main-loop iteration from common.get_wifi_status() (written by
+# network_server.py's wifi watchdog). Read as a global rather than hitting the
+# status file on every animation frame of the hourly/periodic clock overlay.
+WIFI_CONNECTED = True
+
+# Thermal watchdog: above this, drop to an "ultra weak machine" update cadence
+# to cut heat from CPU/IO work; recovers once back below the (lower, to avoid
+# flapping right at the boundary) recovery threshold.
+THERMAL_THROTTLE_TEMP_C = 60.0
+THERMAL_RECOVER_TEMP_C = 55.0
+THERMAL_CHECK_INTERVAL = 30
+ULTRA_WEAK_INTERVAL = 60
+THERMAL_THROTTLED = False
+
+# Hard cutoff: shut the whole Pi down to protect the hardware if it's still
+# critically hot after throttling. Requires CRITICAL_TEMP_CONSECUTIVE_CHECKS
+# consecutive over-threshold readings (spaced THERMAL_CHECK_INTERVAL apart) so
+# a single noisy sensor read can't trigger a shutdown that needs a physical
+# power cycle to undo.
+CRITICAL_TEMP_C = 70.0
+CRITICAL_TEMP_CONSECUTIVE_CHECKS = 2
+
 def set_screen_state(on):
     """Unified screen control using common library and notification."""
     common.set_screen_state(on)
@@ -346,6 +368,34 @@ def get_system_uptime_seconds():
     except Exception:
         return None
 
+def get_cpu_temperature():
+    """Returns CPU temperature in Celsius, or None if it can't be read."""
+    try:
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+            return int(f.read().strip()) / 1000.0
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(['vcgencmd', 'measure_temp'], capture_output=True, text=True, timeout=3)
+        out = result.stdout.strip()
+        if 'temp=' in out:
+            return float(out.split('temp=')[1].split("'")[0])
+    except Exception:
+        pass
+    return None
+
+def initiate_thermal_shutdown(temp_c):
+    logger.critical(f"CPU temperature {temp_c:.1f}C sustained at/above critical threshold "
+                     f"{CRITICAL_TEMP_C}C - shutting down to protect hardware")
+    try:
+        set_screen_state(False)
+    except Exception:
+        pass
+    try:
+        subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=False, capture_output=True)
+    except Exception as e:
+        logger.error(f"Failed to initiate thermal shutdown: {e}")
+
 # Fetched once per boot and cached: SSID/IP won't change during the short
 # post-boot display window, and nmcli is too slow to call every loop tick.
 _cached_network_info = None
@@ -410,6 +460,29 @@ def draw_network_info(image, ssid, ip, font_size, location, color, border_color)
             cur_y += h + line_spacing
     except Exception as e:
         logger.error(f"Error drawing network info: {e}")
+
+def draw_wifi_lost_icon(image, size=28, margin=16, color=(255, 60, 60)):
+    """Small top-right 'no wifi' badge: signal-strength arcs, a dot, and a
+    diagonal slash. Deliberately unobtrusive - a corner glyph, not a banner -
+    and placed top-right to stay clear of the default clock (top-left) and
+    network-info (bottom-left) overlay positions."""
+    try:
+        draw = ImageDraw.Draw(image, 'RGBA')
+        cx = WIDTH - margin - size // 2
+        cy = margin + size // 2
+        base_y = cy + size // 3
+
+        for r in (size // 2, int(size * 0.32), size // 6):
+            bbox = [cx - r, base_y - r, cx + r, base_y + r]
+            draw.arc(bbox, start=225, end=315, fill=color, width=3)
+
+        dot_r = 2
+        draw.ellipse([cx - dot_r, base_y - dot_r, cx + dot_r, base_y + dot_r], fill=color)
+
+        half = size // 2
+        draw.line([cx - half, cy - half, cx + half, cy + half], fill=color, width=3)
+    except Exception as e:
+        logger.error(f"Error drawing wifi lost icon: {e}")
 
 def write_to_fb(fb, bg):
     data = np.array(bg)
@@ -478,6 +551,9 @@ def display_image(fb, img_path, save=True):
                 draw_network_info(bg, ssid, ip, NETWORK_INFO_FONT_SIZE, NETWORK_INFO_LOCATION,
                                    NETWORK_INFO_COLOR, NETWORK_INFO_BORDER_COLOR)
 
+            if not WIFI_CONNECTED:
+                draw_wifi_lost_icon(bg)
+
             write_to_fb(fb, bg)
             update_state("image", img_path)
             update_history(img_path, save=save)
@@ -500,6 +576,8 @@ def display_hourly_clock(fb, current_image=None, img_path=None):
 
         # Use global standard properties
         draw_time(bg, TIME_FORMAT, TIME_FONT_SIZE, location=TIME_LOCATION, color=TIME_COLOR, border_color=TIME_BORDER_COLOR, border_size=TIME_BORDER_SIZE)
+        if not WIFI_CONNECTED:
+            draw_wifi_lost_icon(bg)
         write_to_fb(fb, bg)
         update_state("clock", img_path)
     except Exception as e:
@@ -553,8 +631,9 @@ def get_next_image_index(images, idx, images_shown_in_group):
         return (idx + 1) % len(images), images_shown_in_group
 
 def main():
+    global WIFI_CONNECTED, THERMAL_THROTTLED
     logger.info("Starting Digital Frame service")
-    
+
     # Startup: Force screen ON and clean up any manual overrides
     logger.info("Startup: Forcing screen ON")
     set_screen_state(True)
@@ -601,6 +680,9 @@ def main():
     was_periodic = False
     manual_prev = False
     last_clock_idx = None
+    last_wifi_check = 0
+    last_thermal_check = 0
+    critical_temp_streak = 0
 
     with open(FB_DEV, "wb") as fb:
         while True:
@@ -642,6 +724,45 @@ def main():
                                 images_shown_in_group = 0
                 except:
                     pass
+
+            # Refresh wifi-lost icon state (cheap tmpfs read; watchdog lives in
+            # network_server.py, this process only consumes the status it writes)
+            if now_time - last_wifi_check > 5:
+                last_wifi_check = now_time
+                try:
+                    WIFI_CONNECTED = common.get_wifi_status().get('connected', True)
+                except:
+                    pass
+
+            # Thermal watchdog: throttle update cadence when hot, hard-shutdown
+            # if it stays critically hot despite throttling.
+            if now_time - last_thermal_check > THERMAL_CHECK_INTERVAL:
+                last_thermal_check = now_time
+                temp_c = get_cpu_temperature()
+                if temp_c is not None:
+                    if temp_c >= CRITICAL_TEMP_C:
+                        critical_temp_streak += 1
+                        logger.critical(f"CPU temperature {temp_c:.1f}C >= critical threshold "
+                                         f"{CRITICAL_TEMP_C}C ({critical_temp_streak}/{CRITICAL_TEMP_CONSECUTIVE_CHECKS})")
+                        if critical_temp_streak >= CRITICAL_TEMP_CONSECUTIVE_CHECKS:
+                            initiate_thermal_shutdown(temp_c)
+                            # Shutdown is in flight; stop doing display work while it completes.
+                            wake_event.wait(60)
+                            wake_event.clear()
+                            continue
+                    else:
+                        critical_temp_streak = 0
+                        if temp_c >= THERMAL_THROTTLE_TEMP_C and not THERMAL_THROTTLED:
+                            THERMAL_THROTTLED = True
+                            logger.warning(f"CPU temperature {temp_c:.1f}C exceeds {THERMAL_THROTTLE_TEMP_C}C - "
+                                            f"throttling to ultra-weak-machine mode (update every {ULTRA_WEAK_INTERVAL}s)")
+                        elif temp_c <= THERMAL_RECOVER_TEMP_C and THERMAL_THROTTLED:
+                            THERMAL_THROTTLED = False
+                            logger.info(f"CPU temperature {temp_c:.1f}C recovered below {THERMAL_RECOVER_TEMP_C}C - "
+                                        f"resuming normal update interval")
+                            last_display_time = 0 # Force refresh at restored cadence
+
+            effective_interval = ULTRA_WEAK_INTERVAL if THERMAL_THROTTLED else INTERVAL
 
             # 1. Determine desired screen state
             # Use cached values from load_config_values() instead of get_config()
@@ -791,7 +912,7 @@ def main():
             has_valid_idx = not images or 0 <= idx < len(images)
             if not was_blanked and has_valid_idx and ((SHOW_HOURLY and now.hour != last_hour) or is_periodic or is_scheduled):
                 # Check if it's time to rotate image during periodic clock
-                if time.time() - last_rotation_time >= INTERVAL:
+                if time.time() - last_rotation_time >= effective_interval:
                     idx, images_shown_in_group = get_next_image_index(images, idx, images_shown_in_group)
                     last_rotation_time = time.time()
                     last_display_time = time.time()
@@ -858,7 +979,7 @@ def main():
             elif was_periodic and not (is_periodic or is_scheduled):
                 should_refresh = True
                 was_periodic = False
-            elif time.time() - last_rotation_time >= INTERVAL:
+            elif time.time() - last_rotation_time >= effective_interval:
                 # Time for NEXT image
                 should_refresh = True
                 if images:
@@ -885,7 +1006,7 @@ def main():
                 last_display_time = time.time()
                 last_minute = now.minute
             
-            sleep_time = 30 if WEAK_MACHINE else 1
+            sleep_time = 30 if (WEAK_MACHINE or THERMAL_THROTTLED) else 1
             wake_event.wait(sleep_time)
             wake_event.clear()
 
