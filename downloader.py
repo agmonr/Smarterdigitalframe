@@ -507,7 +507,17 @@ def download_album(album_id, url, output_dir, force_fast=False):
 def sync_all(force_fast=False):
     update_global_status("Idle", "Checking for updates...")
     albums = get_albums()
+
+    config = common.get_config()
+    selected_folders = config.get('DEFAULT', 'selected_folders', fallback='all')
+    selected = None
+    if selected_folders != 'all':
+        selected = {s.strip() for s in selected_folders.split(',') if s.strip()}
+
     for album in albums:
+        if selected is not None and album['path'] not in selected:
+            logger.debug(f"Skipping sync for deselected album: {album['id']}")
+            continue
         download_album(album['id'], album['url'], album['path'], force_fast=force_fast)
     update_global_status("Idle", "Sync complete.")
 

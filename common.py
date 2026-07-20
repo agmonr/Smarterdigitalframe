@@ -378,29 +378,51 @@ def get_image_dir():
 # Cache for image list
 _image_cache = None
 _image_cache_time = 0
+_image_cache_selected = None
 
 def get_images(image_dir=None):
-    global _image_cache, _image_cache_time
+    global _image_cache, _image_cache_time, _image_cache_selected
     if image_dir is None:
         image_dir = get_image_dir()
-    
+
+    config = get_config()
+    selected_folders = config.get('DEFAULT', 'selected_folders', fallback='all')
+
     now = time.time()
     # Cache image list for 60 seconds (increased from 30)
-    if _image_cache is not None and (now - _image_cache_time < 60):
+    if (_image_cache is not None and (now - _image_cache_time < 60)
+            and _image_cache_selected == selected_folders):
         return _image_cache
 
     valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
     if not os.path.exists(image_dir):
         return []
-        
+
+    selected = []
+    if selected_folders != 'all':
+        selected = [s.strip() for s in selected_folders.split(',') if s.strip()]
+
+    def _is_selected(rel_dir):
+        if selected_folders == 'all':
+            return True
+        if rel_dir == '.':
+            # Images directly in the root are only shown when 'all' is selected
+            return False
+        for s in selected:
+            if rel_dir == s or rel_dir.startswith(s + os.sep):
+                return True
+        return False
+
     images = []
-    
+
     def _fast_scan(path):
         try:
+            rel_dir = os.path.relpath(path, image_dir)
+            dir_selected = _is_selected(rel_dir)
             with os.scandir(path) as it:
                 for entry in it:
                     if entry.is_file():
-                        if entry.name.lower().endswith(valid_extensions):
+                        if dir_selected and entry.name.lower().endswith(valid_extensions):
                             rel_path = os.path.relpath(entry.path, image_dir)
                             images.append(rel_path)
                     elif entry.is_dir():
@@ -410,9 +432,10 @@ def get_images(image_dir=None):
             pass
 
     _fast_scan(image_dir)
-    
+
     _image_cache = images
     _image_cache_time = now
+    _image_cache_selected = selected_folders
     return images
 
 def is_time_in_range(now_h, now_m, start_h, start_m, end_h, end_m):
