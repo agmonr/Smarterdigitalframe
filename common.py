@@ -143,32 +143,41 @@ def get_history(limit=1000):
         print(f"Error getting history: {e}")
         return []
 
+_history_writes_since_cleanup = 0
+HISTORY_CLEANUP_EVERY = 20
+
 def add_to_history(name, path, timestamp):
     """Add a new entry to history and maintain limits."""
+    global _history_writes_since_cleanup
     init_db()
     try:
-        config = get_config()
-        retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
-        
         conn = get_db_connection()
         conn.execute(
             'INSERT INTO history (name, path, timestamp) VALUES (?, ?, ?)',
             (name, path, timestamp)
         )
-        
-        # 1. Cleanup by days
-        conn.execute(
-            "DELETE FROM history WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')",
-            (retention_days,)
-        )
-        
-        # 2. Safety cap: Keep only the latest 10000 entries regardless of days
-        conn.execute('''
-            DELETE FROM history WHERE id NOT IN (
-                SELECT id FROM history ORDER BY id DESC LIMIT 10000
+
+        # Cleanup is a full-table scan; skip it on most inserts (image display
+        # ticks every ~10-30s all day) and only run it periodically instead.
+        _history_writes_since_cleanup += 1
+        if _history_writes_since_cleanup >= HISTORY_CLEANUP_EVERY:
+            _history_writes_since_cleanup = 0
+            config = get_config()
+            retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
+
+            # 1. Cleanup by days
+            conn.execute(
+                "DELETE FROM history WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')",
+                (retention_days,)
             )
-        ''')
-        
+
+            # 2. Safety cap: Keep only the latest 10000 entries regardless of days
+            conn.execute('''
+                DELETE FROM history WHERE id NOT IN (
+                    SELECT id FROM history ORDER BY id DESC LIMIT 10000
+                )
+            ''')
+
         conn.commit()
         conn.close()
     except Exception as e:
