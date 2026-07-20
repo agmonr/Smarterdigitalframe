@@ -81,7 +81,7 @@
             </div>
             <div class="form-group">
                 <label>History Retention (Days)</label>
-                <input type="number" id="history-retention-days" min="1" max="365" onchange="saveConfig()">
+                <input type="number" id="history-retention-days" min="1" max="365" onchange="confirmRetentionChange(this)">
                 <div class="info-text">How many days to keep image display history in the database.</div>
             </div>
 
@@ -253,6 +253,24 @@
             return colors[color.toLowerCase()] || "#000000";
         }
 
+        let originalRetentionDays = null;
+
+        function confirmRetentionChange(input) {
+            const newVal = input.value;
+            if (newVal === originalRetentionDays) return;
+
+            const msg = originalRetentionDays !== null && parseInt(newVal, 10) < parseInt(originalRetentionDays, 10)
+                ? `Reduce history retention to ${newVal} days? Display history older than that will be permanently deleted.`
+                : `Change history retention to ${newVal} days?`;
+
+            if (confirm(msg)) {
+                originalRetentionDays = newVal;
+                saveConfig();
+            } else {
+                input.value = originalRetentionDays;
+            }
+        }
+
         async function loadConfig() {
             try {
                 const response = await fetch(`${API_BASE}/config`);
@@ -270,6 +288,7 @@
                 else document.getElementById('weak-machine').value = 'auto';
 
                 document.getElementById('history-retention-days').value = defaults.history_retention_days || 30;
+                originalRetentionDays = document.getElementById('history-retention-days').value;
                 document.getElementById('show-time').value = defaults.showtime.toLowerCase() === 'true' ? 'True' : 'False';
                 document.getElementById('periodic-clock').value = (defaults.showperiodicclock && defaults.showperiodicclock.toLowerCase() === 'true') ? 'True' : 'False';
                 document.getElementById('scheduled-clock').value = (defaults.showscheduledclock && defaults.showscheduledclock.toLowerCase() === 'true') ? 'True' : 'False';
