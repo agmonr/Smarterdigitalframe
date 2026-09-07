@@ -1,7 +1,6 @@
 [DEFAULT]
 imagedir = images/
 interval = 60
-group_size = 20
 framebufferdevice = /dev/fb0
 colororder = RGB
 loglevel = ERROR
