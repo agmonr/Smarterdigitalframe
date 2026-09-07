@@ -171,6 +171,11 @@ $PROJECT_DIR/logs/*.log {
     compress
     missingok
     copytruncate
+    # logs/ is world-writable, and logrotate refuses to rotate anything under
+    # such a directory unless it is told which user to act as - without this it
+    # skips every file here with "parent directory has insecure permissions"
+    # and the logs grow without bound. All five processes run as root.
+    su root root
 }
 EOF
 chmod 644 /etc/logrotate.d/digitalframe
