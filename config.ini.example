@@ -65,6 +65,8 @@ capture_on_motion = True
 capture_mode = image
 capture_burst_count = 20
 capture_video_duration = 10
+capture_retention_days = 7
+capture_retention_size_mb = 20480
 
 [NETWORK]
 ap_name = dframe
