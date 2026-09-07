@@ -591,32 +591,39 @@ def get_random_image_index(images):
     if not images:
         return 0
 
-    # Get relative paths of recently shown images (from history)
+    # How far back to avoid repeats. Deliberately NOT history_retention_days:
+    # that governs how long rows are kept in the history DB, and using it as
+    # the repeat window meant ~89% of the library counted as "recently shown",
+    # so no group ever qualified as fresh and the search below always fell
+    # through to a blind random start. The README's contract is 24 hours.
     config = common.get_config()
-    retention_days = config.getint('DEFAULT', 'history_retention_days', fallback=30)
-    recent_paths = common.get_recent_paths(days=retention_days)
-    
+    norepeat_days = config.getint('DEFAULT', 'norepeat_days', fallback=1)
+    recent_paths = common.get_recent_paths(days=norepeat_days)
+
     indices = list(range(len(images)))
     random.shuffle(indices)
 
-    # Try up to one attempt per image to find a starting point where the WHOLE group is fresh
+    # Prefer a starting point where the WHOLE group is fresh. When the library
+    # is small relative to the display rate there may be no such group, so keep
+    # the least-stale candidate rather than picking blindly - that fallback is
+    # what stops the same images coming back too often.
+    n = len(images)
+    best_idx = indices[0]
+    best_stale = GROUP_SIZE + 1
     for idx in indices:
-        try:
-            is_group_fresh = True
-            # Check the next GROUP_SIZE images starting from idx
-            for offset in range(GROUP_SIZE):
-                check_idx = (idx + offset) % len(images)
-                if images[check_idx] in recent_paths:
-                    is_group_fresh = False
+        stale = 0
+        for offset in range(GROUP_SIZE):
+            if images[(idx + offset) % n] in recent_paths:
+                stale += 1
+                if stale >= best_stale:
                     break
+        if stale == 0:
+            return idx
+        if stale < best_stale:
+            best_stale = stale
+            best_idx = idx
 
-            if is_group_fresh:
-                return idx
-        except:
-            pass
-
-    # If all tries failed, fall back to the first random one
-    return indices[0] if indices else 0
+    return best_idx
 def get_next_image_index(images, idx, images_shown_in_group):
     if not images:
         return 0, 0

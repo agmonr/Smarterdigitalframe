@@ -34,6 +34,7 @@ screenoffmin2 = 0
 screenonhour2 = 0
 screenonmin2 = 0
 groupsize = 20
+norepeat_days = 1
 selected_folders = 
 weak_machine = auto
 history_retention_days = 2
