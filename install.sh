@@ -48,7 +48,7 @@ echo "Setting up Digital Frame service in $PROJECT_DIR..."
 # 0. Install system dependencies
 echo "Installing system dependencies..."
 apt-get update
-apt-get install -y bluez python3-venv python3-pip nginx \
+apt-get install -y git bluez python3-venv python3-pip nginx \
 	logrotate libopenjp2-7 libtiff6 libcamera-apps-lite btop htop vim\
        	dnsmasq network-manager apt-listchanges cloud-init libglx-mesa0 rfkill
 
@@ -57,6 +57,21 @@ apt-get install -y bluez python3-venv python3-pip nginx \
 echo "Unblocking Wi-Fi and Bluetooth via rfkill..."
 rfkill unblock wifi
 rfkill unblock bluetooth
+
+# Disable Wi-Fi power-save. The onboard brcmfmac driver (BCM4345/6 on Pi
+# 3B+/4/Zero 2 W) is known to drop the association intermittently when power
+# save is left on, since the radio can sleep through beacons/reassociation
+# windows - this showed up as repeated "WiFi connectivity lost" cycles in
+# wifi_watchdog.log needing full radio resets to recover. Setting this via a
+# NetworkManager conf.d drop-in (rather than a one-shot `iw` call) makes it
+# stick across reboots and reconnects, since NM re-applies it every time it
+# brings the interface up.
+echo "Disabling Wi-Fi power-save (NetworkManager drop-in)..."
+mkdir -p /etc/NetworkManager/conf.d
+cat <<EOF > /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+[connection]
+wifi.powersave = 2
+EOF
 
 # Mount the boot partition read-only to further reduce SD card wear (this
 # repo already keeps frequently-written runtime state off the card via
