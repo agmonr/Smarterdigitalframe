@@ -414,37 +414,59 @@ def check_free_space(directory, min_gb=1.0):
         logging.error(f"Error checking disk space: {e}")
         return True
 
+_last_capture_cleanup = 0.0
+CAPTURE_CLEANUP_INTERVAL = 3600
+
 def cleanup_old_captures(directory):
+    """Prune old captures under `directory`, including its per-date subfolders.
+
+    Captures are written as <base>/<YYYY-MM-DD>/<file>, so this has to walk the
+    tree: a flat listdir of the base only ever sees the date directories, never
+    matches the .jpg/.mp4 filter, and silently deletes nothing.
+    """
+    global _last_capture_cleanup
     try:
+        # Walking tens of thousands of capture files is far too much I/O to
+        # repeat on every motion capture, so only sweep once an hour.
+        now = time.time()
+        if now - _last_capture_cleanup < CAPTURE_CLEANUP_INTERVAL:
+            return
+        _last_capture_cleanup = now
+
         config = get_config()
         retention_days = config.getint('CAMERA', 'capture_retention_days', fallback=7)
         retention_size_mb = config.getint('CAMERA', 'capture_retention_size_mb', fallback=0)
-        
+
+        files = []
+        for root, dirs, filenames in os.walk(directory):
+            for f in filenames:
+                if f.lower().endswith(('.jpg', '.mp4')):
+                    full_path = os.path.join(root, f)
+                    try:
+                        stat = os.stat(full_path)
+                    except OSError:
+                        continue
+                    files.append({'path': full_path, 'mtime': stat.st_mtime, 'size': stat.st_size})
+
         # 1. Cleanup by days
         if retention_days > 0:
-            cutoff = time.time() - (retention_days * 86400)
-            for f in os.listdir(directory):
-                if f.lower().endswith(('.jpg', '.mp4')):
-                    full_path = os.path.join(directory, f)
-                    if os.path.getmtime(full_path) < cutoff:
-                        os.remove(full_path)
-                        logging.info(f"Deleted old capture by age: {full_path}")
-                        
+            cutoff = now - (retention_days * 86400)
+            kept = []
+            for f in files:
+                if f['mtime'] < cutoff:
+                    try:
+                        os.remove(f['path'])
+                        logging.info(f"Deleted old capture by age: {f['path']}")
+                    except Exception as e:
+                        logging.error(f"Error deleting old capture: {e}")
+                else:
+                    kept.append(f)
+            files = kept
+
         # 2. Cleanup by size
         if retention_size_mb > 0:
             max_bytes = retention_size_mb * 1024 * 1024
-            files = []
-            total_size = 0
-            for f in os.listdir(directory):
-                if f.lower().endswith(('.jpg', '.mp4')):
-                    full_path = os.path.join(directory, f)
-                    try:
-                        stat = os.stat(full_path)
-                        files.append({'path': full_path, 'mtime': stat.st_mtime, 'size': stat.st_size})
-                        total_size += stat.st_size
-                    except OSError:
-                        pass
-                        
+            total_size = sum(f['size'] for f in files)
             if total_size > max_bytes:
                 files.sort(key=lambda x: x['mtime'])
                 for f in files:
@@ -456,7 +478,16 @@ def cleanup_old_captures(directory):
                         logging.info(f"Deleted old capture by size limit: {f['path']}")
                     except Exception as e:
                         logging.error(f"Error deleting file for size limit: {e}")
-                        
+
+        # Drop the date folders the pruning leaves empty behind.
+        for entry in os.listdir(directory):
+            sub = os.path.join(directory, entry)
+            if os.path.isdir(sub):
+                try:
+                    os.rmdir(sub)
+                except OSError:
+                    pass
+
     except Exception as e:
         logging.error(f"Error in cleanup_old_captures: {e}")
 
