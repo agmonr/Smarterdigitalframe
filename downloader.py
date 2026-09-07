@@ -17,6 +17,11 @@ SYNC_STATUS_FILE = common.SYNC_STATUS_FILE
 ALBUMS_FILE = os.path.join(common.PROJECT_ROOT, "albums.json")
 STORAGE_GUARDRAIL_GB = 1.0
 
+# Directories no automatic cleanup may delete from. Synced album copies and
+# images the user pulled out of the slideshow are kept indefinitely - for some
+# of them the frame holds the only copy left.
+PROTECTED_DIR_NAMES = ('google_photos', 'removed')
+
 # RAM-based path for persisted speed limit
 SPEED_CONFIG_FILE = os.path.join(common.SHM_ROOT, "download_speed.json")
 
@@ -128,6 +133,8 @@ def check_storage_guardrail():
                             except:
                                 continue
                     elif entry.is_dir():
+                        if entry.name in PROTECTED_DIR_NAMES:
+                            continue
                         _scan_for_eviction(entry.path)
         except:
             pass
@@ -476,7 +483,12 @@ def download_album(album_id, url, output_dir, force_fast=False):
         # Cleanup orphaned files (no longer in album or old naming style)
         # SAFETY: Only perform cleanup if we actually found images in the cloud. 
         # If 0 images found, it's likely a scraping failure, so we skip cleanup to protect local files.
-        if unique_images:
+        keep_forever = common.get_config().getboolean(
+            'DEFAULT', 'keep_photos_forever', fallback=True)
+        if keep_forever:
+            logger.info(
+                f"keep_photos_forever set; leaving local copies for {album_id} in place")
+        elif unique_images:
             for f in os.listdir(output_dir):
                 if f.lower().endswith(('.jpg', '.jpeg', '.png')) and f not in verified_filenames:
                     orphaned_path = os.path.join(output_dir, f)
